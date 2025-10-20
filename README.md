@@ -178,18 +178,22 @@ edges:
 ## 🚀 使用说明
 1. 放置 `.map` 文件与 `visualize_triggers.py` 同目录； 
 2. 在命令提示符，或者文件资源管理器显示路径的文本框中运行：
+
    ```bash
    python visualize_triggers.py --map example
    ```
-   （此处的example需要改成你自己的地图名！）
-3. 目录下会自动生成与地图同名的 `.html` 文件，打开即可。
+
+（此处的 example 需要改成你自己的地图名！）
+
+3. 目录下会自动生成与地图同名的 `example_trigger_graph.html` 文件，打开即可。
+
+（重申：此处的 example 也会改成你自己的地图名！）
 
 ---
 
 ## 📦 依赖项
 
 运行本项目需要 [Python 本身](https://www.python.org/)，以及以下 Python 库：
-<br>（项目目录下也附有 requirement.txt）
 
 | 模块 | 用途说明 |
 |------|-----------|
@@ -199,6 +203,8 @@ edges:
 | **Pandas** (`pandas`) | 用于中间数据结构的管理与调试（若启用数据统计） |
 | **Argparse**（标准库） | 命令行参数解析 |
 | **Pathlib**、**Dataclasses**、**Datetime**（标准库） | 文件路径管理、数据结构、日志记录等 |
+
+（项目目录下也附有 requirement.txt）
 
 ### 快速安装
 ```bash
