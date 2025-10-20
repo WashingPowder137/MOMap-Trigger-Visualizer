@@ -1,0 +1,6 @@
+# Requirements for the Trigger Network Visualizer
+
+pyyaml>=6.0
+networkx>=3.0
+matplotlib>=3.7
+pandas>=2.0
