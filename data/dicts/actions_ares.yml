@@ -1,0 +1,120 @@
+schema_version: 1
+source: Ares (user-provided excerpts; 0.5 and 3.0 additions)
+notes: Overrides/extends stock actions for IDs 92, 93, 146 and adds 147–149. No `needs_string`
+  field.
+actions:
+  92:
+    name: ActivateFirestorm
+    description: Activates Firestorm Wall for the trigger's house regardless of superweapon
+      charge. Does not drain charge; shuts down when power is lost. Non-human houses
+      only.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    context_refs:
+    - source: trigger.house
+      type: house_id
+      role: affects
+    references: []
+    notes: 'New in Ares 0.5. Format: 92,0,0,0,0,0,0,A.'
+  93:
+    name: DeactivateFirestorm
+    description: Deactivates Firestorm Wall for the trigger's house (use to turn off
+      action 92). Non-human houses only.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    context_refs:
+    - source: trigger.house
+      type: house_id
+      role: affects
+    references: []
+    notes: 'New in Ares 0.5. Format: 93,0,0,0,0,0,0,A.'
+  146:
+    name: AuxiliaryPower
+    description: Permanently adds an amount of auxiliary power to the specified house
+      (can be negative; cumulative).
+    params:
+    - int
+    - house_id
+    - int
+    - int
+    - int
+    - int
+    - int
+    references:
+    - param: 2
+      type: house_id
+      role: affects
+    value_fields:
+    - param: 7
+      name: power_delta
+      unit: power
+    notes: 'New in Ares 3.0. Format: 146,11,<house id>,0,0,0,0,<power>. P1 is literal
+      11.'
+  147:
+    name: KillDriversOf
+    description: Kills drivers of all units that have this trigger attached; respects
+      protections (ProtectedDrivers, Iron Curtain, etc.). Changes owner to house index;
+      use -1 for Special.
+    params:
+    - int
+    - house_id
+    - int
+    - int
+    - int
+    - int
+    - string
+    references:
+    - param: 2
+      type: house_id
+      role: affects
+    notes: 'New in Ares 3.0. Format: 147,0,<house id>,0,0,0,0,A.'
+  148:
+    name: SetEVAVoice
+    description: 'Sets player''s EVA voice: 0 Allied, 1 Russian, 2 Yuri; higher numbers
+      for custom EVAs; -1 disables EVA.'
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    value_fields:
+    - param: 2
+      name: eva_index
+      unit: index
+    references: []
+    notes: 'Implements Firestorm''s Disable EVA (102) and Enable EVA (103). New in
+      Ares 3.0. Format: 148,0,<eva index>,0,0,0,0,A.'
+  149:
+    name: SetGroup
+    description: Sets group number for the object that triggered this action; useful
+      for TeamTypes/TaskForces recruitment.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    value_fields:
+    - param: 2
+      name: group
+      unit: id
+    references: []
+    notes: 'Implements Firestorm''s Set Group (104). New in Ares 3.0. Format: 149,0,<group
+      number>,0,0,0,0,A.'

@@ -1,0 +1,815 @@
+schema_version: 1
+source: ModEnc Actions 050–100 (converted)
+notes: No `needs_string` field by request. Types best-effort; adjust to your mod/rules.
+  Waypoint usage follows table descriptions.
+actions:
+  50:
+    name: ZoomOut
+    description: Zooms the tactical map out (factor controlled by AudioVisual.ZoomInFactor).
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    references: []
+  51:
+    name: ReshroudMap
+    description: Reshrouds the entire map, negating spy satellite effects.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    references: []
+  52:
+    name: ChangeLightBehavior
+    description: 'Changes building spotlight behavior: 0 None, 1 Obey rules.ini, 2
+      Circle, 3 Follow.'
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    value_fields:
+    - param: 2
+      name: mode
+      unit: enum(0..3)
+    references: []
+  53:
+    name: EnableTrigger
+    description: Enables trigger P2.
+    params:
+    - int
+    - trigger_id
+    - int
+    - int
+    - int
+    - int
+    - string
+    references:
+    - param: 2
+      type: trigger_id
+      role: enable
+    produces_edges:
+    - to: trigger_id
+      from_param: 2
+      label: enable
+      style: solid
+  54:
+    name: DisableTrigger
+    description: Disables trigger P2.
+    params:
+    - int
+    - trigger_id
+    - int
+    - int
+    - int
+    - int
+    - string
+    references:
+    - param: 2
+      type: trigger_id
+      role: disable
+    produces_edges:
+    - to: trigger_id
+      from_param: 2
+      label: disable
+      style: solid
+  55:
+    name: CreateRadarEvent
+    description: Creates a radar event of type P2 at waypoint P7.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - waypoint_id
+    value_fields:
+    - param: 2
+      name: radar_event_type
+      unit: enum(1..6)
+    references:
+    - param: 7
+      type: waypoint_id
+      role: at
+  56:
+    name: LocalSet
+    description: Local P2 is set.
+    params:
+    - int
+    - local_id
+    - int
+    - int
+    - int
+    - int
+    - string
+    references:
+    - param: 2
+      type: local_id
+      role: enable_local
+    produces_edges:
+    - to: local_var
+      from_param: 2
+      label: enable_local
+      style: dashed
+
+  57:
+    name: LocalClear
+    description: Local P2 is cleared.
+    params:
+    - int
+    - local_id
+    - int
+    - int
+    - int
+    - int
+    - string
+    references:
+    - param: 2
+      type: local_id
+      role: disable_local
+    produces_edges:
+    - to: local_var
+      from_param: 2
+      label: disable_local
+      style: dashed
+  58:
+    name: MeteorShower
+    description: Creates a meteor shower around waypoint P7.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - waypoint_id
+    references:
+    - param: 7
+      type: waypoint_id
+      role: at
+    notes: Effect visuals defined by METLARGE/METSMALL in ART.
+  59:
+    name: ReduceTiberium
+    description: Reduces amount of Tiberium around waypoint P7.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - waypoint_id
+    references:
+    - param: 7
+      type: waypoint_id
+      role: at
+  60:
+    name: SellBuilding
+    description: Attached building is sold.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    references: []
+  61:
+    name: TurnOffBuilding
+    description: Attached building is turned off (requires Powered/TogglePower and
+      positive Power).
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    references: []
+  62:
+    name: TurnOnBuilding
+    description: Attached building is turned on (requires Powered/TogglePower and
+      positive Power).
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    references: []
+  63:
+    name: Apply100DamageAt
+    description: Detonates an explosion of HE warhead (100 damage) at waypoint P2.
+    params:
+    - int
+    - waypoint_id
+    - int
+    - int
+    - int
+    - int
+    - string
+    references:
+    - param: 2
+      type: waypoint_id
+      role: at
+  64:
+    name: SmallLightFlashAt
+    description: Shows a small light flash at waypoint P2.
+    params:
+    - int
+    - waypoint_id
+    - int
+    - int
+    - int
+    - int
+    - string
+    references:
+    - param: 2
+      type: waypoint_id
+      role: at
+  65:
+    name: MediumLightFlashAt
+    description: Shows a medium light flash at waypoint P2.
+    params:
+    - int
+    - waypoint_id
+    - int
+    - int
+    - int
+    - int
+    - string
+    references:
+    - param: 2
+      type: waypoint_id
+      role: at
+  66:
+    name: LargeLightFlashAt
+    description: Shows a large light flash at waypoint P2.
+    params:
+    - int
+    - waypoint_id
+    - int
+    - int
+    - int
+    - int
+    - string
+    references:
+    - param: 2
+      type: waypoint_id
+      role: at
+  67:
+    name: AnnounceWin
+    description: Announces that the player has won (EVA_MissionAccomplished).
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    references: []
+  68:
+    name: AnnounceLose
+    description: Announces that the player has lost (EVA_MissionFailed).
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    references: []
+  69:
+    name: ForceEnd
+    description: Forces end of scenario (EVA_BattleControlTerminated).
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    references: []
+  70:
+    name: DestroyTag
+    description: Destroys Tag P2 and all attached triggers.
+    params:
+    - int
+    - tag_id
+    - int
+    - int
+    - int
+    - int
+    - string
+    references:
+    - param: 2
+      type: tag_id
+      role: affects
+  71:
+    name: SetAmbientStep
+    description: Sets ambient light fade step to P2.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    value_fields:
+    - param: 2
+      name: ambient_step
+      unit: number
+    references: []
+  72:
+    name: SetAmbientRate
+    description: Sets ambient light fade rate to P2.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    value_fields:
+    - param: 2
+      name: ambient_rate
+      unit: number
+    references: []
+  73:
+    name: SetAmbientLight
+    description: Sets ambient light level to P2.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    value_fields:
+    - param: 2
+      name: ambient_level
+      unit: level
+    references: []
+  74:
+    name: AITriggersBegin
+    description: Start AI triggers for house P2.
+    params:
+    - int
+    - house_id
+    - int
+    - int
+    - int
+    - int
+    - string
+    references:
+    - param: 2
+      type: house_id
+      role: affects
+  75:
+    name: AITriggersStop
+    description: Stop AI triggers for house P2.
+    params:
+    - int
+    - house_id
+    - int
+    - int
+    - int
+    - int
+    - string
+    references:
+    - param: 2
+      type: house_id
+      role: affects
+  76:
+    name: RatioAITriggerTeams
+    description: P2% chance for each of HOUSE's AI triggers to be created.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    context_refs:
+    - source: trigger.house
+      type: house_id
+      role: scopes
+    value_fields:
+    - param: 2
+      name: percent
+      unit: percent
+    references: []
+  77:
+    name: RatioTeamAircraft
+    description: Obsolete (YR). AI % of aircraft created for teams (P2% AI Triggers,
+      (100-P2)% other).
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    context_refs:
+    - source: trigger.house
+      type: house_id
+      role: scopes
+    value_fields:
+    - param: 2
+      name: percent
+      unit: percent
+    references: []
+  78:
+    name: RatioTeamInfantry
+    description: Obsolete (YR). AI % of infantry for teams (P2% AI Triggers, (100-P2)%
+      other).
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    context_refs:
+    - source: trigger.house
+      type: house_id
+      role: scopes
+    value_fields:
+    - param: 2
+      name: percent
+      unit: percent
+    references: []
+  79:
+    name: RatioTeamUnits
+    description: Obsolete (YR). AI % of units for teams (P2% AI Triggers, (100-P2)%
+      other).
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    context_refs:
+    - source: trigger.house
+      type: house_id
+      role: scopes
+    value_fields:
+    - param: 2
+      name: percent
+      unit: percent
+    references: []
+  80:
+    name: ReinforcementAt
+    description: Create reinforcement TeamType P2 at waypoint P7 (EVA voice).
+    params:
+    - int
+    - teamtype_id
+    - int
+    - int
+    - int
+    - int
+    - waypoint_id
+    references:
+    - param: 2
+      type: teamtype_id
+      role: creates
+    - param: 7
+      type: waypoint_id
+      role: at
+  81:
+    name: WakeupSelf
+    description: Attached object exits sleep/harmless and enters guard mode.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    references: []
+  82:
+    name: WakeupAllSleepers
+    description: All HOUSE units exit sleep and enter guard mode.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    context_refs:
+    - source: trigger.house
+      type: house_id
+      role: affects
+    references: []
+  83:
+    name: WakeupAllHarmless
+    description: All HOUSE units exit harmless and enter guard mode.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    context_refs:
+    - source: trigger.house
+      type: house_id
+      role: affects
+    references: []
+  84:
+    name: WakeupGroup
+    description: Wakeup all HOUSE units whose TaskForce group equals P2.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    context_refs:
+    - source: trigger.house
+      type: house_id
+      role: affects
+    value_fields:
+    - param: 2
+      name: group
+      unit: id
+    references: []
+  85:
+    name: VeinGrowth
+    description: Sets whether Veins grow (P2=0/1 no/yes).
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    value_fields:
+    - param: 2
+      name: enabled
+      unit: bool
+    references: []
+  86:
+    name: TiberiumGrowth
+    description: Sets whether Tiberium grows (P2=0/1 no/yes).
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    value_fields:
+    - param: 2
+      name: enabled
+      unit: bool
+    references: []
+  87:
+    name: IceGrowth
+    description: Sets whether ice grows (P2=0/1 no/yes).
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    value_fields:
+    - param: 2
+      name: enabled
+      unit: bool
+    references: []
+  88:
+    name: ParticleAnimAt
+    description: Spawn ParticleType P2 at waypoint P7.
+    params:
+    - int
+    - particle_id
+    - int
+    - int
+    - int
+    - int
+    - waypoint_id
+    references:
+    - param: 2
+      type: particle_id
+      role: creates
+    - param: 7
+      type: waypoint_id
+      role: at
+  89:
+    name: RemoveParticleAnimAt
+    description: Remove all persistent particles from waypoint P7.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - waypoint_id
+    references:
+    - param: 7
+      type: waypoint_id
+      role: at
+  90:
+    name: LightningStrikeAt
+    description: A single Ion Storm lightning bolt strikes at waypoint P7.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - waypoint_id
+    references:
+    - param: 7
+      type: waypoint_id
+      role: at
+  91:
+    name: GoBerzerk
+    description: Attached object goes berzerk (Cyborg infantry only).
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    references: []
+  92:
+    name: ActivateFirestorm
+    description: Activates HOUSE's firestorm defense.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    context_refs:
+    - source: trigger.house
+      type: house_id
+      role: affects
+    references: []
+  93:
+    name: DeactivateFirestorm
+    description: Deactivates HOUSE's firestorm defense.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    context_refs:
+    - source: trigger.house
+      type: house_id
+      role: affects
+    references: []
+  94:
+    name: IonCannonStrikeAt
+    description: Fires Ion-Cannon at waypoint P7.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - waypoint_id
+    references:
+    - param: 7
+      type: waypoint_id
+      role: at
+  95:
+    name: NukeStrikeAt
+    description: Fires a Nuclear Missile (Multi Missile) at waypoint P7.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - waypoint_id
+    references:
+    - param: 7
+      type: waypoint_id
+      role: at
+  96:
+    name: ChemMissileStrikeAt
+    description: Fires a Chemical missile at waypoint P7.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - waypoint_id
+    references:
+    - param: 7
+      type: waypoint_id
+      role: at
+  97:
+    name: ToggleTrainCargo
+    description: Toggles Basic:TrainCrate flag.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    references: []
+  98:
+    name: PlaySoundEffectRandom
+    description: Plays sound P2 at a random waypoint.
+    params:
+    - int
+    - sound_id
+    - int
+    - int
+    - int
+    - int
+    - string
+    references:
+    - param: 2
+      type: sound_id
+      role: plays
+  99:
+    name: PlaySoundEffectAt
+    description: Plays sound effect P2 at waypoint P7.
+    params:
+    - int
+    - sound_id
+    - int
+    - int
+    - int
+    - int
+    - waypoint_id
+    references:
+    - param: 2
+      type: sound_id
+      role: plays
+    - param: 7
+      type: waypoint_id
+      role: at
+  100:
+    name: PlayIngameMovie
+    description: Displays movie P2 in the minimap window (with EVA_IncomingTransmission
+      and AudioVisual MovieOn/Off).
+    params:
+    - int
+    - movie_id
+    - int
+    - int
+    - int
+    - int
+    - string
+    references:
+    - param: 2
+      type: movie_id
+      role: plays

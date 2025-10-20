@@ -1,0 +1,511 @@
+schema_version: 1
+source: "ModEnc: List of available Map Events (converted to YAML)"
+notes: >
+  Parameter list uses generic types (int|string). Cross-references for graph building
+  are declared under `references` (explicit param-based) and `context_refs` (implicit context like trigger.house).
+  Values that act as thresholds (e.g., credits, time) are exposed via `value_fields` for labeling, not as references.
+
+conditions:
+
+  0:
+    name: None
+    description: No Event - cannot be activated
+    params: [int, int]
+    needs_string: false
+    references: []
+
+  1:
+    name: EnteredBy
+    description: House P2 enters attached building/celltag
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: house_id, role: scopes}
+
+  2:
+    name: SpiedBy
+    description: House P2 sends a spy into attached building
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: house_id, role: scopes}
+
+  3:
+    name: ThievedBy
+    description: Doesn't work
+    params: [int, int]
+    needs_string: false
+    references: []
+
+  4:
+    name: DiscoveredByPlayer
+    description: Attached object is discovered by the player
+    params: [int, int]
+    needs_string: false
+    references: []
+
+  5:
+    name: HouseDiscovered
+    description: House P2 is discovered by the player
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: house_id, role: scopes}
+
+  6:
+    name: AttackedByAnybody
+    description: Attached object is attacked by anybody
+    params: [int, int]
+    needs_string: false
+    references: []
+
+  7:
+    name: DestroyedByAnybody
+    description: Attached object is destroyed by anybody
+    params: [int, int]
+    needs_string: false
+    references: []
+
+  8:
+    name: AnyEvent
+    description: Any event (always-true style event often used as placeholder)
+    params: [int, int]
+    needs_string: false
+    references: []
+
+  9:
+    name: DestroyedUnitsAll
+    description: All units of house P2 are destroyed
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: house_id, role: depends_on}
+
+  10:
+    name: DestroyedBuildingsAll
+    description: All buildings of house P2 are destroyed
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: house_id, role: depends_on}
+
+  11:
+    name: DestroyedAll
+    description: All objects of house P2 are destroyed
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: house_id, role: depends_on}
+
+  12:
+    name: CreditsExceed
+    description: House owning this trigger has at least P2 credits
+    params: [int, int]
+    needs_string: false
+    context_refs:
+      - {source: "trigger.house", type: house_id, role: scopes}
+    value_fields:
+      - {param: 2, name: min_credits, unit: credits}
+    references: []
+
+  13:
+    name: ElapsedTime
+    description: P2 seconds have passed in this mission
+    params: [int, int]
+    needs_string: false
+    value_fields:
+      - {param: 2, name: seconds, unit: "s"}
+    references: []
+
+  14:
+    name: MissionTimerExpired
+    description: Mission timer expired
+    params: [int, int]
+    needs_string: false
+    references: []
+
+  15:
+    name: DestroyedBuildingsExactly
+    description: Exactly P2 buildings owned by HOUSE have been destroyed
+    params: [int, int]
+    needs_string: false
+    context_refs:
+      - {source: "trigger.house", type: house_id, role: scopes}
+    value_fields:
+      - {param: 2, name: destroyed_buildings, unit: count}
+    references: []
+
+  16:
+    name: DestroyedUnitsExactly
+    description: Exactly P2 units owned by HOUSE have been destroyed
+    params: [int, int]
+    needs_string: false
+    context_refs:
+      - {source: "trigger.house", type: house_id, role: scopes}
+    value_fields:
+      - {param: 2, name: destroyed_units, unit: count}
+    references: []
+
+  17:
+    name: NoFactoriesLeft
+    description: HOUSE has no buildings with a valid Factory set
+    params: [int, int]
+    needs_string: false
+    context_refs:
+      - {source: "trigger.house", type: house_id, role: depends_on}
+    references: []
+
+  18:
+    name: CiviliansEvacuated
+    description: Civilian objects owned by HOUSE have left the map
+    params: [int, int]
+    needs_string: false
+    context_refs:
+      - {source: "trigger.house", type: house_id, role: depends_on}
+    references: []
+
+  19:
+    name: BuildBuildingType
+    description: Building with internal index P2 is placed on the map
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: building_index, role: depends_on}
+
+  20:
+    name: BuildUnitType
+    description: Unit with internal index P2 is placed on the map
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: unit_index, role: depends_on}
+
+  21:
+    name: BuildInfantryType
+    description: Infantry with internal index P2 is placed on the map
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: infantry_index, role: depends_on}
+
+  22:
+    name: BuildAircraftType
+    description: Aircraft with internal index P2 is placed on the map
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: aircraft_index, role: depends_on}
+
+  23:
+    name: LeavesMapTeam
+    description: TeamType with ID P2 leaves the map
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: teamtype_id, role: depends_on}
+
+  24:
+    name: ZoneEntryBy
+    description: Attached celltrigger's zone entered by house P2
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: house_id, role: scopes}
+
+  25:
+    name: CrossesHorizontalLine
+    description: House P2 crosses the horizontal line of the attached celltag
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: house_id, role: scopes}
+
+  26:
+    name: CrossesVerticalLine
+    description: House P2 crosses the vertical line of the attached celltag
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: house_id, role: scopes}
+
+  27:
+    name: GlobalIsSet
+    description: Global variable with index P2 is set (priority over other events)
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: global_id, role: depends_on}
+
+  28:
+    name: GlobalIsClear
+    description: Global variable with index P2 is cleared (priority over other events)
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: global_id, role: depends_on}
+
+  29:
+    name: DestroyedNotInfiltrate
+    description: Attached unit is destroyed, but not when infiltrating
+    params: [int, int]
+    needs_string: false
+    references: []
+
+  30:
+    name: LowPower
+    description: House P2 is in a low power situation
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: house_id, role: depends_on}
+
+  31:
+    name: AllBridgesDestroyed
+    description: Attached bridge destroyed
+    params: [int, int]
+    needs_string: false
+    references: []
+
+  32:
+    name: BuildingExists
+    description: HOUSE owns a building with internal number P2
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: building_index, role: depends_on}
+    context_refs:
+      - {source: "trigger.house", type: house_id, role: scopes}
+
+  33:
+    name: SelectedByPlayer
+    description: Attached object is selected by the player (single-player only)
+    params: [int, int]
+    needs_string: false
+    references: []
+
+  34:
+    name: ComesNearWaypoint
+    description: HOUSE approaches waypoint P2
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: waypoint_id, role: depends_on}
+    context_refs:
+      - {source: "trigger.house", type: house_id, role: scopes}
+
+  35:
+    name: EnemyInSpotlight
+    description: Enemy unit enters the spotlight cast by the attached building
+    params: [int, int]
+    needs_string: false
+    references: []
+
+  36:
+    name: LocalIsSet
+    description: Local variable with index P2 is set (priority over other events)
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: local_id, role: depends_on}
+
+  37:
+    name: LocalIsClear
+    description: Local variable with index P2 is cleared (priority over other events)
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: local_id, role: depends_on}
+
+  38:
+    name: FirstDamagedCombatOnly
+    description: Attached object suffering first damage from combat damage only
+    params: [int, int]
+    needs_string: false
+    references: []
+
+  39:
+    name: HalfHealthCombatOnly
+    description: Attached object damaged to half health from combat damage only
+    params: [int, int]
+    needs_string: false
+    references: []
+
+  40:
+    name: QuarterHealthCombatOnly
+    description: Attached object damaged to quarter health from combat damage only
+    params: [int, int]
+    needs_string: false
+    references: []
+
+  41:
+    name: FirstDamagedAnySource
+    description: Attached object first suffering damage from any source
+    params: [int, int]
+    needs_string: false
+    references: []
+
+  42:
+    name: HalfHealthAnySource
+    description: Attached object damaged to half health from any source
+    params: [int, int]
+    needs_string: false
+    references: []
+
+  43:
+    name: QuarterHealthAnySource
+    description: Attached object damaged to quarter health from any source
+    params: [int, int]
+    needs_string: false
+    references: []
+
+  44:
+    name: AttackedByHouse
+    description: Attached object attacked by some unit of house P2
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: house_id, role: scopes}
+
+  45:
+    name: AmbientLightBelow
+    description: Ambient light drops below P2 percent
+    params: [int, int]
+    needs_string: false
+    value_fields:
+      - {param: 2, name: light_pct_below, unit: percent}
+    references: []
+
+  46:
+    name: AmbientLightAbove
+    description: Ambient light rises above P2 percent
+    params: [int, int]
+    needs_string: false
+    value_fields:
+      - {param: 2, name: light_pct_above, unit: percent}
+    references: []
+
+  47:
+    name: ElapsedScenarioTimeSeconds
+    description: Exactly P2 seconds have elapsed since start of scenario
+    params: [int, int]
+    needs_string: false
+    value_fields:
+      - {param: 2, name: seconds, unit: s}
+    references: []
+
+  48:
+    name: DestroyedByAnything
+    description: Attached object destroyed by anything
+    params: [int, int]
+    needs_string: false
+    references: []
+
+  49:
+    name: PickupCrateAttached
+    description: Crate is picked up by the attached object
+    params: [int, int]
+    needs_string: false
+    references: []
+
+  50:
+    name: PickupCrateAny
+    description: Crate picked up by any unit
+    params: [int, int]
+    needs_string: false
+    references: []
+
+  51:
+    name: RandomDelay
+    description: Fires after random time between 50% and 150% of P2 seconds since trigger enabled
+    params: [int, int]
+    needs_string: false
+    value_fields:
+      - {param: 2, name: seconds, unit: s}
+    references: []
+
+  52:
+    name: CreditsBelow
+    description: HOUSE owns less than P2 credits
+    params: [int, int]
+    needs_string: false
+    context_refs:
+      - {source: "trigger.house", type: house_id, role: scopes}
+    value_fields:
+      - {param: 2, name: max_credits, unit: credits}
+    references: []
+
+  53:
+    name: SpyEnteringAsHouse
+    description: A spy disguised as house P2 enters attached object
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: house_id, role: filters}
+
+  54:
+    name: SpyEnteringAsInfantry
+    description: A spy disguised as infantry index P2 enters attached object
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: infantry_index, role: filters}
+
+  55:
+    name: DestroyedUnitsNavalAll
+    description: All naval units of house P2 have been destroyed
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: house_id, role: depends_on}
+
+  56:
+    name: DestroyedUnitsLandAll
+    description: All land units of house P2 have been destroyed
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: house_id, role: depends_on}
+
+  57:
+    name: BuildingDoesNotExist
+    description: No buildings with index P2 (owned by HOUSE) exist on the map
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: building_index, role: depends_on}
+    context_refs:
+      - {source: "trigger.house", type: house_id, role: scopes}
+
+  58:
+    name: PowerFull
+    description: House P2's power is at 100%
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: house_id, role: depends_on}
+
+  59:
+    name: EnteredOrOverflownBy
+    description: Objects owned by house P2 move over the attached cell
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: house_id, role: scopes}
+
+  60:
+    name: TechTypeExists
+    description: At least P2 objects of Techno ID P3 exist on the map
+    params: [int, int, string]
+    needs_string: true
+    references:
+      - {param: 3, type: techno_id, role: depends_on}
+    value_fields:
+      - {param: 2, name: min_count, unit: count}
+
+  61:
+    name: TechTypeDoesNotExist
+    description: There are no technos of ID P3 on the map
+    params: [int, int, string]
+    needs_string: true
+    references:
+      - {param: 3, type: techno_id, role: depends_on}

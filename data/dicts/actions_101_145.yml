@@ -1,0 +1,771 @@
+schema_version: 1
+source: ModEnc Actions 101–145 (converted)
+notes: No `needs_string` field. Types are best-effort. HOUSE is modeled via `context_refs`
+  where applicable.
+actions:
+  101:
+    name: ReshroudMapAt
+    description: Reshrouds map around waypoint P2. Radius controlled by AudioVisual.RevealTriggerRadius.
+    params:
+    - int
+    - waypoint_id
+    - int
+    - int
+    - int
+    - int
+    - string
+    references:
+    - param: 2
+      type: waypoint_id
+      role: at
+  102:
+    name: LightningStormStrikeAt
+    description: HOUSE fires an Ion Storm strike at waypoint P7.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - waypoint_id
+    references:
+    - param: 7
+      type: waypoint_id
+      role: at
+    context_refs:
+    - source: trigger.house
+      type: house_id
+      role: affects
+  103:
+    name: TimerText
+    description: Displays CSF text label P2 as the mission timer text.
+    params:
+    - int
+    - csf_label
+    - int
+    - int
+    - int
+    - int
+    - string
+    references:
+    - param: 2
+      type: csf_label
+      role: plays
+  104:
+    name: FlashTeam
+    description: Flashes all members of TeamType P2 for P7 frames.
+    params:
+    - int
+    - teamtype_id
+    - int
+    - int
+    - int
+    - int
+    - int
+    references:
+    - param: 2
+      type: teamtype_id
+      role: affects
+    value_fields:
+    - param: 7
+      name: duration_frames
+      unit: frames
+  105:
+    name: TalkBubble
+    description: Displays frame P7 in talkbubl.shp over the first member of first
+      TeamType P2 instance.
+    params:
+    - int
+    - teamtype_id
+    - int
+    - int
+    - int
+    - int
+    - int
+    references:
+    - param: 2
+      type: teamtype_id
+      role: affects
+    value_fields:
+    - param: 7
+      name: frame_index
+      unit: number
+  106:
+    name: SetObjectTechLevel
+    description: Sets ObjectType P2 to tech level P7.
+    params:
+    - int
+    - object_type
+    - int
+    - int
+    - int
+    - int
+    - int
+    references:
+    - param: 2
+      type: object_type
+      role: affects
+    value_fields:
+    - param: 7
+      name: tech_level
+      unit: level
+  107:
+    name: ReinforcementByChrono
+    description: Creates TeamType P2, chronoshifts it to waypoint P7, and grants it
+      to HOUSE.
+    params:
+    - int
+    - teamtype_id
+    - int
+    - int
+    - int
+    - int
+    - waypoint_id
+    references:
+    - param: 2
+      type: teamtype_id
+      role: creates
+    - param: 7
+      type: waypoint_id
+      role: at
+    context_refs:
+    - source: trigger.house
+      type: house_id
+      role: creates
+  108:
+    name: CreateCrateAt
+    description: Creates a crate of type P2 at waypoint P7.
+    params:
+    - int
+    - crate_type
+    - int
+    - int
+    - int
+    - int
+    - waypoint_id
+    references:
+    - param: 2
+      type: crate_type
+      role: creates
+    - param: 7
+      type: waypoint_id
+      role: at
+  109:
+    name: IronCurtainAt
+    description: Fires Iron Curtain at waypoint P7.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - waypoint_id
+    references:
+    - param: 7
+      type: waypoint_id
+      role: at
+  110:
+    name: PauseGame
+    description: Pauses the game for P2 seconds.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    value_fields:
+    - param: 2
+      name: seconds
+      unit: s
+    references: []
+  111:
+    name: EvictOccupiers
+    description: Evicts all occupants from attached building.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    references: []
+  112:
+    name: JumpCameraAtWaypoint
+    description: Moves tactical view to waypoint P7.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - waypoint_id
+    references:
+    - param: 7
+      type: waypoint_id
+      role: at
+  113:
+    name: MakeHouseCheer
+    description: All infantry of house P2 play their cheer animation if able.
+    params:
+    - int
+    - house_id
+    - int
+    - int
+    - int
+    - int
+    - string
+    references:
+    - param: 2
+      type: house_id
+      role: affects
+  114:
+    name: SetSidebarTab
+    description: Flips sidebar to tab number P2 (0–3).
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    value_fields:
+    - param: 2
+      name: tab_index
+      unit: enum(0..3)
+    references: []
+  115:
+    name: FlashCameo
+    description: Flashes cameo of ObjectType P2 for P7 frames.
+    params:
+    - int
+    - object_type
+    - int
+    - int
+    - int
+    - int
+    - int
+    references:
+    - param: 2
+      type: object_type
+      role: affects
+    value_fields:
+    - param: 7
+      name: duration_frames
+      unit: frames
+  116:
+    name: StopSoundsAt
+    description: Stops all sounds at waypoint P7 started via 'Play Sound At'.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - waypoint_id
+    references:
+    - param: 7
+      type: waypoint_id
+      role: at
+  117:
+    name: PlayIngameMoviePause
+    description: Pauses game, locks input and displays movie P2 in the sidebar.
+    params:
+    - int
+    - movie_id
+    - int
+    - int
+    - int
+    - int
+    - string
+    references:
+    - param: 2
+      type: movie_id
+      role: plays
+  118:
+    name: ClearAllSmudges
+    description: Deletes all Smudge objects from the map.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    references: []
+  119:
+    name: DestroyAllOfHouse
+    description: Destroys all objects of house P2.
+    params:
+    - int
+    - house_id
+    - int
+    - int
+    - int
+    - int
+    - string
+    references:
+    - param: 2
+      type: house_id
+      role: affects
+  120:
+    name: DestroyAllBuildingsOfHouse
+    description: Destroys all buildings of house P2.
+    params:
+    - int
+    - house_id
+    - int
+    - int
+    - int
+    - int
+    - string
+    references:
+    - param: 2
+      type: house_id
+      role: affects
+  121:
+    name: DestroyAllLandUnitsOfHouse
+    description: Destroys all land units of house P2.
+    params:
+    - int
+    - house_id
+    - int
+    - int
+    - int
+    - int
+    - string
+    references:
+    - param: 2
+      type: house_id
+      role: affects
+  122:
+    name: DestroyAllNavalUnitsOfHouse
+    description: Destroys all naval units of house P2.
+    params:
+    - int
+    - house_id
+    - int
+    - int
+    - int
+    - int
+    - string
+    references:
+    - param: 2
+      type: house_id
+      role: affects
+  123:
+    name: MindControlBaseOf
+    description: HOUSE mind controls the base of house P2.
+    params:
+    - int
+    - house_id
+    - int
+    - int
+    - int
+    - int
+    - string
+    references:
+    - param: 2
+      type: house_id
+      role: affects
+    context_refs:
+    - source: trigger.house
+      type: house_id
+      role: affects
+  124:
+    name: RestoreMindControlledBaseTo
+    description: HOUSE relinquishes control of the previously mind-controlled base
+      to house P2.
+    params:
+    - int
+    - house_id
+    - int
+    - int
+    - int
+    - int
+    - string
+    references:
+    - param: 2
+      type: house_id
+      role: affects
+    context_refs:
+    - source: trigger.house
+      type: house_id
+      role: affects
+  125:
+    name: CreateBuildingAt
+    description: Creates building P2 at waypoint P7 and grants it to HOUSE (units
+      obstructing are moved).
+    params:
+    - int
+    - building_type
+    - int
+    - int
+    - int
+    - int
+    - waypoint_id
+    references:
+    - param: 2
+      type: building_type
+      role: creates
+    - param: 7
+      type: waypoint_id
+      role: at
+    context_refs:
+    - source: trigger.house
+      type: house_id
+      role: creates
+  126:
+    name: RestoreStartingUnitsOfHouse
+    description: Recreates all buildings and units house P2 had at the start of the
+      game.
+    params:
+    - int
+    - house_id
+    - int
+    - int
+    - int
+    - int
+    - string
+    references:
+    - param: 2
+      type: house_id
+      role: affects
+  127:
+    name: ChronoScreenEffect
+    description: Displays Chrono Warp screen effect for P2 frames.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    value_fields:
+    - param: 2
+      name: duration_frames
+      unit: frames
+    references: []
+  128:
+    name: TeleportAllTo
+    description: Teleports all units owned by HOUSE to waypoint P7.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - waypoint_id
+    references:
+    - param: 7
+      type: waypoint_id
+      role: at
+    context_refs:
+    - source: trigger.house
+      type: house_id
+      role: affects
+  129:
+    name: SetSuperweaponCharge
+    description: If HOUSE has superweapon P2, sets its charge to P7 percent.
+    params:
+    - int
+    - superweapon_id
+    - int
+    - int
+    - int
+    - int
+    - int
+    references:
+    - param: 2
+      type: superweapon_id
+      role: affects
+    context_refs:
+    - source: trigger.house
+      type: house_id
+      role: depends_on
+    value_fields:
+    - param: 7
+      name: percent
+      unit: percent
+  130:
+    name: RestoreStartingBuildingsOfHouse
+    description: Restores all buildings house P2 had at the start to full health.
+    params:
+    - int
+    - house_id
+    - int
+    - int
+    - int
+    - int
+    - string
+    references:
+    - param: 2
+      type: house_id
+      role: affects
+  131:
+    name: FlashBuildingsOfType
+    description: All buildings of type P2 owned by HOUSE flash for P7 frames.
+    params:
+    - int
+    - building_type
+    - int
+    - int
+    - int
+    - int
+    - int
+    references:
+    - param: 2
+      type: building_type
+      role: filters
+    context_refs:
+    - source: trigger.house
+      type: house_id
+      role: scopes
+    value_fields:
+    - param: 7
+      name: duration_frames
+      unit: frames
+  132:
+    name: SuperweaponSetRechargeTime
+    description: Sets the recharge time of superweapon P2 to P7 frames.
+    params:
+    - int
+    - superweapon_id
+    - int
+    - int
+    - int
+    - int
+    - int
+    references:
+    - param: 2
+      type: superweapon_id
+      role: affects
+    value_fields:
+    - param: 7
+      name: recharge_frames
+      unit: frames
+  133:
+    name: SuperweaponResetRechargeTime
+    description: Resets the recharge time of superweapon P2 to its rules default.
+    params:
+    - int
+    - superweapon_id
+    - int
+    - int
+    - int
+    - int
+    - string
+    references:
+    - param: 2
+      type: superweapon_id
+      role: affects
+  134:
+    name: SuperweaponReset
+    description: Resets superweapon P2 as if infiltrated by a spy.
+    params:
+    - int
+    - superweapon_id
+    - int
+    - int
+    - int
+    - int
+    - string
+    references:
+    - param: 2
+      type: superweapon_id
+      role: affects
+  135:
+    name: SetPreferredTargetCell
+    description: HOUSE will aim future targetable superweapons at waypoint P7.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - waypoint_id
+    references:
+    - param: 7
+      type: waypoint_id
+      role: at
+    context_refs:
+    - source: trigger.house
+      type: house_id
+      role: affects
+  136:
+    name: ClearPreferredTargetCell
+    description: HOUSE resets targetable superweapons to normal targeting.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    context_refs:
+    - source: trigger.house
+      type: house_id
+      role: affects
+    references: []
+  137:
+    name: CenterBaseCellSet
+    description: HOUSE assumes waypoint P7 is the center of its base.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - waypoint_id
+    references:
+    - param: 7
+      type: waypoint_id
+      role: at
+    context_refs:
+    - source: trigger.house
+      type: house_id
+      role: affects
+  138:
+    name: CenterBaseCellClear
+    description: HOUSE recalculates the center of its base.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    context_refs:
+    - source: trigger.house
+      type: house_id
+      role: affects
+    references: []
+  139:
+    name: BlackoutRadar
+    description: Disables HOUSE's radar screen for P2 frames.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    value_fields:
+    - param: 2
+      name: duration_frames
+      unit: frames
+    context_refs:
+    - source: trigger.house
+      type: house_id
+      role: affects
+    references: []
+  140:
+    name: SetDefensiveTargetCell
+    description: HOUSE will aim Force Shields at waypoint P7.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - waypoint_id
+    references:
+    - param: 7
+      type: waypoint_id
+      role: at
+    context_refs:
+    - source: trigger.house
+      type: house_id
+      role: affects
+  141:
+    name: ClearDefensiveTargetCell
+    description: HOUSE will target its Force Shields normally.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    context_refs:
+    - source: trigger.house
+      type: house_id
+      role: affects
+    references: []
+  142:
+    name: RetintRed
+    description: Retints the Red portion of the screen to P2 percent.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    value_fields:
+    - param: 2
+      name: percent
+      unit: percent
+    references: []
+  143:
+    name: RetintGreen
+    description: Retints the Green portion of the screen to P2 percent.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    value_fields:
+    - param: 2
+      name: percent
+      unit: percent
+    references: []
+  144:
+    name: RetintBlue
+    description: Retints the Blue portion of the screen to P2 percent.
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    value_fields:
+    - param: 2
+      name: percent
+      unit: percent
+    references: []
+  145:
+    name: JumpCameraHome
+    description: Focuses the player's view on the ConYard/MCV (same as 'H' hotkey).
+    params:
+    - int
+    - int
+    - int
+    - int
+    - int
+    - int
+    - string
+    references: []

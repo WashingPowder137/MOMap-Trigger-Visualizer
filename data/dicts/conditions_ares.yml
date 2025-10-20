@@ -1,0 +1,219 @@
+# conditions_ares.yml — Ares platform extended trigger events
+# Source: https://ares-developers.github.io/Ares-docs/new/triggerevents.html
+# schema_version governs this dictionary format (not Ares version).
+schema_version: 1
+source: "Ares Trigger Events"
+notes: |
+  This file lists Ares-added trigger events, independent from vanilla YR conditions.yml.
+  Types in `params` are generic (int|string). Use `references` for graph edges to entities,
+  `context_refs` for implicit references like trigger.house, and `value_fields` for scalar thresholds.
+  Abduction in Ares applies to units; buildings cannot be abducted.
+
+conditions:
+  62:
+    name: ElectromagneticPulse
+    description: The attached object is disabled by an EMP effect.
+    params: [int, int]
+    needs_string: false
+    references: []
+
+  63:
+    name: ElectromagneticPulseByHouse
+    description: The attached object is disabled by an EMP effect from the specified house (P2).
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: house_id, role: scopes}
+
+  64:
+    name: RemovedEMP
+    description: The attached object is reactivated by EMP removal.
+    params: [int, int]
+    needs_string: false
+    references: []
+
+  65:
+    name: RemovedEMPByHouse
+    description: The attached object is reactivated by EMP removal from the specified house (P2).
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: house_id, role: scopes}
+
+  66:
+    name: EnemyInSpotlightNow
+    description: The attached building’s spotlight currently detects an enemy.
+    params: [int, int]
+    needs_string: false
+    references: []
+
+  67:
+    name: KillDriver
+    description: The attached unit's driver is killed by any house (attacker unspecified).
+    params: [int, int]
+    needs_string: false
+    references: []
+
+  68:
+    name: KillDriverByHouse
+    description: The attached unit's driver is killed by the specified house (P2).
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: house_id, role: depends_on}
+
+  69:
+    name: VehicleTaken
+    description: The attached vehicle is taken by any house.
+    params: [int, int]
+    needs_string: false
+    references: []
+
+  70:
+    name: VehicleTakenByHouse
+    description: The attached vehicle is taken by the specified house (P2).
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: house_id, role: scopes}
+
+  71:
+    name: Abduction
+    description: The attached object is abducted by any house.
+    params: [int, int]
+    needs_string: false
+    references: []
+
+  72:
+    name: AbductionByHouse
+    description: The attached object is abducted by the specified house (P2). Units only; buildings cannot be abducted.
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: house_id, role: scopes}
+
+  73:
+    name: AbductionPerformed
+    description: The attached object abducted some other unit (no house filter). Units only.
+    params: [int, int]
+    needs_string: false
+    references: []
+
+  74:
+    name: AbductionPerformedAgainstHouse
+    description: The attached object abducted a unit belonging to the specified house (P2). Units only.
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: house_id, role: depends_on}
+
+  75:
+    name: SuperWeaponActivatedByOwner
+    description: The trigger's owning house ACTIVATED the super weapon specified by P2 (internal name).
+    params: [int, string]
+    needs_string: true
+    context_refs:
+      - {source: "trigger.house", type: house_id, role: scopes}
+    references:
+      - {param: 2, type: superweapon_id, role: depends_on}
+
+  76:
+    name: SuperWeaponDeactivatedByOwner
+    description: The trigger's owning house DEACTIVATED the super weapon specified by P2 (internal name).
+    params: [int, string]
+    needs_string: true
+    context_refs:
+      - {source: "trigger.house", type: house_id, role: scopes}
+    references:
+      - {param: 2, type: superweapon_id, role: depends_on}
+
+  77:
+    name: SuperWeaponFiredNearWaypointByOwner
+    description: The trigger's owning house fired the super weapon P3 (internal name) near waypoint P2.
+    params: [int, int, string]   # P2 = waypoint id, P3 = super weapon internal name
+    needs_string: true
+    context_refs:
+      - {source: "trigger.house", type: house_id, role: scopes}
+    references:
+      - {param: 2, type: waypoint_id, role: depends_on}
+      - {param: 3, type: superweapon_id, role: depends_on}
+
+  78:
+    name: ReverseEngineeredByOwner
+    description: The trigger's owning house has reverse-engineered unit/techno P3 (internal name).
+    params: [int, int, string]   # P3 = unit/techno internal name
+    needs_string: true
+    context_refs:
+      - {source: "trigger.house", type: house_id, role: scopes}
+    references:
+      - {param: 3, type: techno_id, role: depends_on}
+
+  79:
+    name: ReverseEngineeringSucceededAny
+    description: The attached object (reverse-engineer-capable building) successfully reverse-engineered some unit (any type).
+    params: [int, int]
+    needs_string: false
+    references: []
+
+  80:
+    name: ReverseEngineeringSucceededType
+    description: The attached object (reverse-engineer-capable building) successfully reverse-engineered unit/techno P3 (internal name).
+    params: [int, int, string]   # P3 = unit/techno internal name
+    needs_string: true
+    references:
+      - {param: 3, type: techno_id, role: depends_on}
+
+  81:
+    name: OwnerOwnsAtLeastCountOfTechno
+    description: The trigger's owning house owns at least P2 instances of unit/techno P3 (internal name).
+    params: [int, int, string]   # P2 = min count, P3 = internal name
+    needs_string: true
+    context_refs:
+      - {source: "trigger.house", type: house_id, role: scopes}
+    value_fields:
+      - {param: 2, name: min_count, unit: count}
+    references:
+      - {param: 3, type: techno_id, role: depends_on}
+
+  82:
+    name: OwnerOwnsLessThanCountOfTechno
+    description: The trigger's owning house owns fewer than P2 instances of unit/techno P3 (internal name).
+    params: [int, int, string]   # P2 = max-1 threshold, P3 = internal name
+    needs_string: true
+    context_refs:
+      - {source: "trigger.house", type: house_id, role: scopes}
+    value_fields:
+      - {param: 2, name: max_count_minus_1, unit: count}
+    references:
+      - {param: 3, type: techno_id, role: depends_on}
+
+  83:
+    name: AttackedOrDestroyedByAny
+    description: The attached object is attacked or destroyed by any house.
+    params: [int, int]
+    needs_string: false
+    references: []
+
+  84:
+    name: AttackedOrDestroyedByHouse
+    description: The attached object is attacked or destroyed by the specified house (P2).
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: house_id, role: depends_on}
+
+  87:
+    name: AllKeepAlivesDestroyedForHouse
+    description: All keep-alive units (buildings and non-buildings) of house P2 are destroyed.
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: house_id, role: depends_on}
+
+  88:
+    name: AllKeepAliveBuildingsDestroyedForHouse
+    description: All keep-alive buildings of house P2 are destroyed.
+    params: [int, int]
+    needs_string: false
+    references:
+      - {param: 2, type: house_id, role: depends_on}
