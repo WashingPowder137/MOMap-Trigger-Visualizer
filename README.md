@@ -2,7 +2,7 @@
 **Mental Omega Map Trigger Visualizer** 可以将 *Command & Conquer: Mental Omega* 地图文件中的触发逻辑转化为交互式的可视化网络图。  
 
 
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)  
+[![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)  
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)  
 [![Made with PyVis](https://img.shields.io/badge/Made%20with-PyVis-orange.svg)](https://pyvis.readthedocs.io/)  
 [![Powered by Vis.js](https://img.shields.io/badge/Frontend-Vis.js-yellow.svg)](https://visjs.org/)
