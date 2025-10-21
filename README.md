@@ -225,12 +225,13 @@ edges:
 |------|-----------|
 | **PyYAML** (`pyyaml`) | 解析与合并 YAML 文件（用于 conditions/actions 数据） |
 | **NetworkX** (`networkx`) | 构建触发器关系图（节点与边结构） |
+| **PyVis** (`pyvis`) | 构建可交互的网络图（最终的可交互前端） |
 
 （项目目录下也附有 requirement.txt）
 
 ### 快速安装
 ```bash
-pip install pyyaml networkx
+pip install pyyaml networkx pyvis
 ```
 或者
 ```
