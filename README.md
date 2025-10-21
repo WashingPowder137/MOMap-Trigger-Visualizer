@@ -193,22 +193,18 @@ edges:
 
 ## 📦 依赖项
 
-运行本项目需要 [Python 本身](https://www.python.org/)，以及以下 Python 库：
+运行本项目需要 [Python 本身](https://www.python.org/)，以及以下非标准 Python 库：
 
 | 模块 | 用途说明 |
 |------|-----------|
 | **PyYAML** (`pyyaml`) | 解析与合并 YAML 文件（用于 conditions/actions 数据） |
 | **NetworkX** (`networkx`) | 构建触发器关系图（节点与边结构） |
-| **Matplotlib** (`matplotlib`) | 可视化输出与图像保存 |
-| **Pandas** (`pandas`) | 用于中间数据结构的管理与调试（若启用数据统计） |
-| **Argparse**（标准库） | 命令行参数解析 |
-| **Pathlib**、**Dataclasses**、**Datetime**（标准库） | 文件路径管理、数据结构、日志记录等 |
 
 （项目目录下也附有 requirement.txt）
 
 ### 快速安装
 ```bash
-pip install pyyaml networkx matplotlib pandas
+pip install pyyaml networkx
 ```
 或者
 ```
