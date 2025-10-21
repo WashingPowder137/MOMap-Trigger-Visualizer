@@ -41,10 +41,6 @@ try:
     from pyvis.network import Network
 except Exception:
     missing.append('pyvis')
-try:
-    import jinja2  # pyvis uses it
-except Exception:
-    missing.append('jinja2')
 
 if missing:
     print('⚠️ Missing dependencies: ' + ', '.join(missing))
@@ -53,7 +49,6 @@ if missing:
 
 import yaml, networkx as nx
 from pyvis.network import Network
-from jinja2 import Template
 
 # ---- user config loader ----
 from pathlib import Path
