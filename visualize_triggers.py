@@ -410,22 +410,42 @@ def _pad8(n: int) -> str:
     except Exception:
         return str(n)
 
-def _letters_to_waypoint(s: str) -> int | str:
+def _letters_to_waypoint(s: str | int) -> int | str:
     """
-    将 1 位或 2 位大写字母的路径点标签转换为十进制索引：
-      A..Z -> 0..25
-      AA..AZ -> 0..25, BA..BZ -> 26..51, ...
-    若是数字或数字字符串则直接转 int；无法解析则原样返回。
+    将路径点字母标签转换为整数索引：
+      A..Z   -> 0..25
+      AA..AZ -> 26..51
+      BA..BZ -> 52..77
+      ...
+    规则：两位字母的序号 = 26 + 26*(首字母序) + (次字母序)，其中 A=0, B=1, ...
+    纯数字或可转数字的字符串则直接转 int；无法解析则原样返回。
     """
-    if isinstance(s, str) and s.isalpha() and s.isupper():
-        if len(s) == 1:
-            return ord(s[0]) - 65
-        if len(s) == 2:
-            return (ord(s[0]) - 65) * 26 + (ord(s[1]) - 65)
+    # 先处理数字/数字字符串
     try:
+        # 若本身就是 int 或者是像 "12" 这样的数字字符串，直接返回数值
         return int(s)
     except Exception:
+        pass
+
+    if not isinstance(s, str):
         return s
+
+    su = s.strip().upper()
+    if not su.isalpha():
+        return s  # 混合或其他格式，保持原样
+
+    if len(su) == 1:
+        # 单字母：A..Z => 0..25
+        return ord(su[0]) - ord('A')
+
+    if len(su) == 2:
+        # 两字母：从 26 起算
+        a = ord(su[0]) - ord('A')
+        b = ord(su[1]) - ord('A')
+        return 26 + 26 * a + b
+
+    # 三位及以上（通常不会出现），保守返回原值
+    return s
 
 def _fmt_val_with_type(val, type_hint: str | None, key_name: str = "") -> str:
     """
