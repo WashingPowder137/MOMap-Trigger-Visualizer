@@ -93,25 +93,15 @@
 ### 🤖 5. 自动解析与集成
 - 对于新导入的地图，会自动将其局部变量/触发/条件/行为读取并保存为 JSON 文档，再从文档中读取数据画图，无需额外操作。   
 
-
-
-
-
-
-
-
-
-
-
 ---
 
 ## 📂 目录结构
 ```
 📁 project_root
 │
-├── visualize_triggers.py           # 主可视化脚本
-├── map_parser.py                   # 地图解析器
+├── start_client.bat                # 启动客户端
 ├── config.yml                      # 可选用户配置文件
+│
 ├── data/
 │   ├── dicts/
 │   │   ├── merge_actions.py        # 用于整合触发行为至同一个 YML 文档
@@ -127,9 +117,14 @@
 │   │       ├── actions_merge.log   # 合并完成后的触发行为文档
 │   │       ├── conditions_all.yml  # 合并完成后的触发行为文档
 │   │       └── conditons_merge.log # 合并触发行为时的日志
-│   └── maps/                       # 会在首次运行后自动创建
-│       └── <mapname>/              # 地图中包含的触发（以及它们的条件和行为）与局部变量会被存放在该目录下
-├── assets/
+│   ├── maps/                       # 会在首次运行后自动创建
+│   │   └── <mapname>/              # 绘制触发网络图需要的全部信息会被存放在该目录下
+│   └── tools/                      
+│       ├── visualize_triggers.py   # 主可视化脚本
+│       ├── map_parser.py           # 地图解析器
+│       └── open_trigger_graphs.py  # 客户端本身
+│
+├── assets/                         # 包含 GitHub 页面中的预览图
 │   ├── overview.png
 │   ├── theme_dark.png
 │   ├── theme_light.png
@@ -137,6 +132,8 @@
 │   ├── opacity_close.png
 │   ├── highlight_node.png
 │   └── highlight_edge.png
+│
+├── CHANGELOG.md
 ├── README.md
 └── requirements.txt
 ```
@@ -202,18 +199,51 @@ edges:
 ---
 
 ## 🚀 使用说明
-1. 放置 `.map` 文件与 `visualize_triggers.py` 同目录； 
-2. 在命令提示符，或者文件资源管理器显示路径的文本框中运行：
 
-   ```bash
-   python visualize_triggers.py --map example
-   ```
+通过一个简单的客户端用于生成与打开触发图：
+
+- 文件位置：`tools/open_trigger_graphs.py`
+- 功能概览：
+  - 列出 `data/maps/` 目录内已有的地图条目，并显示每项的状态：
+    - 完整 (HTML + sidecar JSONs 都存在)
+    - 缺 JSON（缺少 `*_debug.json` / `*_node_details.json`）
+    - 缺 HTML（缺少 `*_trigger_graph.html`）
+    - 全缺（既缺 HTML 也缺 JSON）
+    - 输入编号打开相应的触发网络图
+    - 试图打开缺少文件的网络图时，客户端会在根目录下查找同名的 `.map` 文件并自动调用 `visualize_triggers.py` 进行生成，并在成功后自动打开网络图
+  - 输入 `g` 以主动查找根目录下所有 `.map` 文件
+    - 输入编号生成相应的触发网络图
+    - 支持批量生成（输入 `a` 将为所有 `.map` 运行生成）
+    - 生成单个文件时会在成功后自动打开，批量生成则不会自动打开
+
+使用示例：
+
+1. 放置 `.map` 文件在根目录下； 
+
+2. 进入客户端：
+
+直接打开 `start_client.bat`，
+
+或者在命令提示符，或者文件资源管理器显示路径的文本框中运行：
+```powershell
+python tools\open_trigger_graphs.py
+```
+
+之后根据客户端中的提示操作即可。
+
+注意：因为直接打开 `.html` 文件可能导致部分数据无法被正确抓取，因此客户端会启动本地 HTTP 服务器打开网络图，请确保网络或本地端口许可。
+
+3. 老版本中：
+
+在命令提示符，或者文件资源管理器显示路径的文本框中运行：
+```powershell
+# 如果你需要直接用脚本生成单个地图
+python tools\visualize_triggers.py --map example
+```
+
+的方法同样可用，不过基于前述注意事项，更推荐使用客户端。
 
 （此处的 example 需要改成你自己的地图名！）
-
-3. 目录下会自动生成与地图同名的 `example_trigger_graph.html` 文件，打开即可。
-
-（重申：此处的 example 也会改成你自己的地图名！）
 
 ---
 
@@ -247,8 +277,25 @@ pip install -r requirements.txt
 
 ## 🧩 最新更新
 
-- 2025-10-22
-  - 修复了触发行为中路径点ID的解析逻辑错误。
+[查看完整更新目录](CHANGELOG.md)
+
+## [1.1.0] - 2025-11-13
+
+### Changed
+- 将 `visualize_triggers.py` 与 `map_parser.py` 放入了新增的 `tools/` 目录以便与其他工具统一管理；放在根目录下的相应文件仍然可以使用，但是优先级低于 `tools/` 目录。
+
+### Improved
+- 现在会根据结点/边的数目加权计算 `size_score` 并相应设定网络图稳定前的最大迭代次数了。
+- 在缩放倍率小于特定值时，节点下的标签会被隐藏，以降低前端渲染的压力。
+- 最大迭代次数、结点/边的权重、隐藏结点标签时的缩放倍率都可在 `config.yml` 文件中自定义。
+
+### Fixed
+- 修复了初始缩放读取与高亮的一致性问题。现在打开地图时，左下角会显示正确的缩放倍率并相应设定结点/边的高亮程度了。
+
+### Added
+- 新增客户端：`tools/open_trigger_graphs.py`，支持列表浏览、按需生成、批量生成与通过本地 HTTP 服务器打开网格图。
+- 新增 Debug HUD：目前只会显示 `node_count`（结点数）、`edge_count`（边数）、`stab_iter`（最大迭代次数）、`size_score` 并实时显示缩放倍率，可以在 `config.yml` 内开关。
+- 新增外部 sidecar 文件：`*_node_details.json` 与 `*_debug.json`，在通过客户端打开网格图时会自动生成，用处是 HTML 性能并使调试信息可用。
 
 ---
 
