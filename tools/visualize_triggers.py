@@ -27,6 +27,9 @@ from __future__ import annotations
 import sys, json, argparse
 from pathlib import Path
 
+# Repository root (two levels up from tools/ file)
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
 # ---------- dependency checks ----------
 missing = []
 try:
@@ -1654,10 +1657,10 @@ def resolve_map_dir(arg: str|None) -> Path|None:
     if p.exists():
         if p.is_dir(): return p
         if p.suffix.lower()=='.map':
-            cand = Path('data')/'maps'/p.stem
+            cand = REPO_ROOT / 'data' / 'maps' / p.stem
             return cand if cand.exists() else p.parent
         return p.parent
-    cand = Path('data')/'maps'/arg
+    cand = REPO_ROOT / 'data' / 'maps' / arg
     return cand if cand.exists() else None
 
 def guess_map_name(map_arg: str|None, map_dir: Path) -> str:
@@ -1705,7 +1708,7 @@ def ensure_jsons_via_map_parser(map_arg: str|None, map_dir: Path|None, map_name:
 
     # 如果还没找到 .map，就再在 data/maps/<name>/ 下碰碰运气
     if not map_file:
-        candidate = Path('data')/'maps'/map_name/f"{map_name}.map"
+        candidate = REPO_ROOT / 'data' / 'maps' / map_name / f"{map_name}.map"
         if candidate.exists():
             map_file = candidate.resolve()
 
@@ -1714,26 +1717,35 @@ def ensure_jsons_via_map_parser(map_arg: str|None, map_dir: Path|None, map_name:
         return None
 
     # 3) 调用 map_parser.py
-    parser_py = Path(__file__).parent / "map_parser.py"
-    if not parser_py.exists():
-        # 如果 map_parser.py 不在同目录，再尝试当前工作目录
-        if Path("map_parser.py").exists():
-            parser_py = Path("map_parser.py")
-        else:
-            print("⚠️ 找不到 map_parser.py，无法自动生成 JSON。")
-            return None
+    # Try multiple candidate locations for map_parser.py to support different repo layouts
+    candidates = [
+        Path(__file__).parent / 'map_parser.py',   # tools/map_parser.py
+        Path(__file__).resolve().parents[1] / 'map_parser.py',  # ../map_parser.py (repo root)
+        Path('map_parser.py'),                     # cwd map_parser.py
+        Path('tools') / 'map_parser.py',          # tools/map_parser.py from cwd
+    ]
+    parser_py = None
+    for c in candidates:
+        if c.exists():
+            parser_py = c
+            break
+    if not parser_py:
+        print("⚠️ 找不到 map_parser.py，无法自动生成 JSON。尝试的路径: " + ', '.join(str(c) for c in candidates))
+        return None
 
     import subprocess, sys as _sys
     try:
         print(f"ℹ️ 正在调用 map_parser 解析：{map_file}")
         # 这里仅传入 --map，让你的 map_parser 走“自动目录优先”的分支
-        subprocess.check_call([_sys.executable, str(parser_py), str(map_file)])
+        # Run from repository root so map_parser's relative output logic behaves consistently
+        repo_root = Path(__file__).resolve().parents[1]
+        subprocess.check_call([_sys.executable, str(parser_py), str(map_file)], cwd=str(repo_root))
     except subprocess.CalledProcessError as e:
         print(f"❌ map_parser 运行失败：{e}")
         return None
 
     # 4) 生成后的目录固定是 ./data/maps/<map_name>（你的 map_parser 约定）
-    out_dir = Path('data')/'maps'/map_name
+    out_dir = REPO_ROOT / 'data' / 'maps' / map_name
     if out_dir.exists() and _has_all_json(out_dir, map_name):
         print(f"✅ 生成成功：{out_dir}")
         return out_dir
@@ -1746,8 +1758,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description='Interactive trigger graph for YR/MO maps')
     ap.add_argument('--map', default=None, help='Map name (e.g., yours), directory with JSONs, or path to .map')
     ap.add_argument('--map-dir', default=None, help='Directory containing *_triggers.json/_actions.json/_events.json')
-    ap.add_argument('--actions-yml', default=str(Path('data')/'dicts'/'merged'/'actions_all.yml'))
-    ap.add_argument('--conditions-yml', default=str(Path('data')/'dicts'/'merged'/'conditions_all.yml'))
+    ap.add_argument('--actions-yml', default=str(REPO_ROOT / 'data' / 'dicts' / 'merged' / 'actions_all.yml'))
+    ap.add_argument('--conditions-yml', default=str(REPO_ROOT / 'data' / 'dicts' / 'merged' / 'conditions_all.yml'))
     ap.add_argument('--out', default=None, help='Output HTML (default: <script dir>/<mapname>_trigger_graph.html)')
     args = ap.parse_args(argv)
 
@@ -1795,7 +1807,7 @@ def main(argv=None):
     conditions_dict = load_conditions_dict(conditions_yml)
 
     # Overrides (optional)
-    over_dir = Path('data')/'dicts'/'overrides'
+    over_dir = REPO_ROOT / 'data' / 'dicts' / 'overrides'
     merge_overrides(actions_dict,    over_dir/'actions_edges.yml',    'actions')
     merge_overrides(conditions_dict, over_dir/'conditions_refs.yml',  'conditions')
 

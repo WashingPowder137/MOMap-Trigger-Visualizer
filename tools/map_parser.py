@@ -7,10 +7,12 @@ from pathlib import Path
 
 def make_output_dir_for_map(input_path: str) -> Path:
     """
-    Create ./data/maps/<map_name>/ relative to this script file location.
+    Create ./data/maps/<map_name>/ under the repository root (not under tools/).
     Return the created/existing directory Path.
     """
-    base_dir = Path(__file__).parent / "data" / "maps"
+    # prefer repository root: two parents up from this script (tools/ -> repo root)
+    repo_root = Path(__file__).resolve().parents[1]
+    base_dir = repo_root / "data" / "maps"
     base_dir.mkdir(parents=True, exist_ok=True)
     map_name = Path(input_path).stem
     out_dir = base_dir / map_name

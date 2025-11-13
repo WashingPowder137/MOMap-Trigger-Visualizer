@@ -105,6 +105,68 @@ def open_graph_entry(entry):
     webbrowser.open(url)
 
 
+def _spawn_background_map_parser(map_name: str, map_dir: Path):
+    """在后台调用 map_parser.py 来生成缺失的 JSON。
+    返回 (event, result) 其中 event 为 threading.Event，可被等待；result 为 dict，
+    在进程结束后填充 'pid','log_path','written_files'。
+    """
+    mapfile = find_mapfile_for(map_name)
+    if not mapfile:
+        print(f"⚠️ 未找到对应的 .map 文件，无法自动修补 JSON：{map_name}")
+        return None, None
+
+    candidates = [Path(__file__).parent / 'map_parser.py', Path('map_parser.py'), Path('tools') / 'map_parser.py']
+    parser_py = None
+    for c in candidates:
+        if c.exists():
+            parser_py = c
+            break
+    if not parser_py:
+        print('⚠️ 未能定位 map_parser.py，无法自动修补 JSON（尝试的路径: ' + ', '.join(str(c) for c in candidates) + ')')
+        return None, None
+
+    import subprocess, sys as _sys
+    repo_root = Path(__file__).resolve().parents[1]
+
+    # ensure map_dir exists
+    map_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        # start subprocess but send its stdout/stderr to DEVNULL so we don't interleave logs
+        proc = subprocess.Popen([_sys.executable, str(parser_py), str(mapfile)], cwd=str(repo_root), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as e:
+        print('❌ 后台修补启动失败：', e)
+        return None, None
+
+    done = threading.Event()
+    result = {'pid': proc.pid, 'report_path': str(map_dir / f"{map_name}_report.json"), 'written_files': []}
+
+    def _wait_and_parse():
+        try:
+            proc.wait()
+        finally:
+            pass
+        # determine which expected files now exist
+        try:
+            expected = [
+                map_dir / f"{map_name}_triggers.json",
+                map_dir / f"{map_name}_events.json",
+                map_dir / f"{map_name}_actions.json",
+                map_dir / f"{map_name}_locals.json",
+                map_dir / f"{map_name}_report.json",
+            ]
+            written = [str(p) for p in expected if p.exists()]
+            result['written_files'] = written
+        except Exception:
+            result['written_files'] = []
+        done.set()
+
+    t = threading.Thread(target=_wait_and_parse, daemon=True)
+    t.start()
+    # return event and result holder to caller who can wait on event
+    return done, result
+
+
 def find_map_files():
     # scan project root for .map files
     out = []
@@ -153,7 +215,11 @@ def generate_from_map(map_path, auto_open=False):
     spinner_thread = threading.Thread(target=_spinner, args=(f"Generating {map_path.name}...", stop_event), daemon=True)
     spinner_thread.start()
     try:
-        subprocess.check_call(cmd)
+        # suppress child process stdout/stderr so its verbose 'Wrote:' doesn't interleave
+        with subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) as p:
+            p.wait()
+            if p.returncode != 0:
+                raise subprocess.CalledProcessError(p.returncode, cmd)
     except subprocess.CalledProcessError as e:
         stop_event.set()
         spinner_thread.join()
@@ -303,7 +369,38 @@ def main():
                 server = start_http_server(ROOT)
                 # give server a moment
                 time.sleep(0.3)
+
+            # Before opening: check whether the original source JSONs (triggers/actions/events/locals)
+            # are present in the map directory. If missing, we will still open the HTML but spawn a
+            # background map_parser to auto-fill them and inform the user.
+            mapname = entry['map']
+            map_dir = entry.get('html').parent if entry.get('html') else (MAPS_DIR / mapname)
+            def _has_source_jsons(d: Path, name: str) -> bool:
+                # require ALL four source JSONs to be present; otherwise consider incomplete
+                return all((d / f"{name}_{k}.json").exists() or (d / f"{k}.json").exists()
+                           for k in ("triggers", "actions", "events", "locals"))
+
+            if not _has_source_jsons(map_dir, mapname):
+                print(f"⚠️ 注意：缺少源 JSON（triggers/actions/events/locals）。已在后台自动修补：{mapname}（生成信息将写入 {mapname}_report.json）")
+                done_event, result = _spawn_background_map_parser(mapname, map_dir)
+            else:
+                done_event = None
+                result = None
+
             open_graph_entry(entry)
+
+            # If we spawned a background repair, wait for it to finish now and report a concise summary.
+            if done_event is not None:
+                # wait with a small dot-progress to avoid blocking print interleaving
+                print('ℹ️ 等待后台修补完成...', end='', flush=True)
+                while not done_event.wait(timeout=0.5):
+                    print('.', end='', flush=True)
+                print('\n✅ 修补完成。', end=' ')
+                try:
+                    # 简洁单行提示，用户可自行查看目录或 report
+                    print(f'修补完成 - 请查看：{map_dir}')
+                except Exception:
+                    print('修补完成 - 请检查对应目录以获取详情。')
     finally:
         if server:
             print('Stopping HTTP server...')
