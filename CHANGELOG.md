@@ -7,9 +7,6 @@
 
 ## [1.1.0] - 2025-11-13
 
-### Changed
-- 将 `visualize_triggers.py` 与 `map_parser.py` 放入了新增的 `tools/` 目录以便与其他工具统一管理；放在根目录下的相应文件仍然可以使用，但是优先级低于 `tools/` 目录。
-
 ### Improved
 - 现在会根据结点/边的数目加权计算 `size_score` 并相应设定网络图稳定前的最大迭代次数了。
 - 在缩放倍率小于特定值时，节点下的标签会被隐藏，以降低前端渲染的压力。
@@ -20,5 +17,10 @@
 
 ### Added
 - 新增客户端：`tools/open_trigger_graphs.py`，支持列表浏览、按需生成、批量生成与通过本地 HTTP 服务器打开网格图。
-- 新增 Debug HUD：目前只会显示 `node_count`（结点数）、`edge_count`（边数）、`stab_iter`（最大迭代次数）、`size_score` 并实时显示缩放倍率，可以在 `config.yml` 内开关。
-- 新增外部 sidecar 文件：`*_node_details.json` 与 `*_debug.json`，在通过客户端打开网格图时会自动生成，用处是 HTML 性能并使调试信息可用。
+- 新增调试菜单：目前只会显示 `node_count`（结点数）、`edge_count`（边数）、`stab_iter`（最大迭代次数）、`size_score` 以及缩放倍率。
+  - 可以在 `config.yml` 内开关。
+- 新增外部文件：`*_node_details.json` 与 `*_debug.json`，在通过客户端打开网格图时会自动生成并放置在相应网格图的目录下。
+  - 用处是 HTML 性能并使调试信息可用。
+
+### Changed
+- 因为有了客户端，将 `visualize_triggers.py` 与 `map_parser.py` 放入了新增的 `tools/` 目录以便与其他工具统一管理；放在根目录下的相应文件仍然可以使用，但是优先级低于 `tools/` 目录。
