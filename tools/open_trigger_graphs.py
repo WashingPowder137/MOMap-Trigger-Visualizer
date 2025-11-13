@@ -112,7 +112,7 @@ def _spawn_background_map_parser(map_name: str, map_dir: Path):
     """
     mapfile = find_mapfile_for(map_name)
     if not mapfile:
-        print(f"⚠️ 未找到对应的 .map 文件，无法自动修补 JSON：{map_name}")
+        print(f"⚠️ No corresponding .map file found; cannot auto-repair JSON: {map_name}")
         return None, None
 
     candidates = [Path(__file__).parent / 'map_parser.py', Path('map_parser.py'), Path('tools') / 'map_parser.py']
@@ -122,7 +122,7 @@ def _spawn_background_map_parser(map_name: str, map_dir: Path):
             parser_py = c
             break
     if not parser_py:
-        print('⚠️ 未能定位 map_parser.py，无法自动修补 JSON（尝试的路径: ' + ', '.join(str(c) for c in candidates) + ')')
+        print('⚠️ Could not locate map_parser.py; cannot auto-repair JSON (tried: ' + ', '.join(str(c) for c in candidates) + ')')
         return None, None
 
     import subprocess, sys as _sys
@@ -135,7 +135,7 @@ def _spawn_background_map_parser(map_name: str, map_dir: Path):
         # start subprocess but send its stdout/stderr to DEVNULL so we don't interleave logs
         proc = subprocess.Popen([_sys.executable, str(parser_py), str(mapfile)], cwd=str(repo_root), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception as e:
-        print('❌ 后台修补启动失败：', e)
+        print('❌ Failed to start background repair:', e)
         return None, None
 
     done = threading.Event()
@@ -215,15 +215,46 @@ def generate_from_map(map_path, auto_open=False):
     spinner_thread = threading.Thread(target=_spinner, args=(f"Generating {map_path.name}...", stop_event), daemon=True)
     spinner_thread.start()
     try:
-        # suppress child process stdout/stderr so its verbose 'Wrote:' doesn't interleave
-        with subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) as p:
-            p.wait()
+        # Run the visualizer from the repository root so relative paths resolve correctly.
+        repo_root = ROOT
+        # ensure logs directory
+        logs_dir = repo_root / 'data' / 'logs'
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        log_path = logs_dir / f'visualize_{map_path.stem}.log'
+        print(f'Running: {cmd}'); print(f'  cwd={repo_root}'); print(f'  log -> {log_path}')
+        # open log file for child stdout/stderr
+        logf = open(str(log_path), 'w', encoding='utf-8')
+        with subprocess.Popen(cmd, cwd=str(repo_root), stdout=logf, stderr=subprocess.STDOUT) as p:
+            try:
+                p.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                # child still running; user can inspect the log
+                print(f'Generation still running after 30s. Check log: {log_path}')
+                # do not kill the process; leave it running for manual inspection
+                return False
             if p.returncode != 0:
-                raise subprocess.CalledProcessError(p.returncode, cmd)
+                # read last portion of log for diagnostic
+                try:
+                    logf.flush()
+                    logf.close()
+                    out = log_path.read_text(encoding='utf-8', errors='replace')
+                    snippet = out[-4000:]
+                except Exception:
+                    snippet = '<could not read child output>'
+                raise subprocess.CalledProcessError(p.returncode, cmd, output=snippet)
+        # ensure log file closed
+        try:
+            logf.close()
+        except Exception:
+            pass
     except subprocess.CalledProcessError as e:
         stop_event.set()
         spinner_thread.join()
         print(f'Generation failed with exit code {e.returncode}')
+        if getattr(e, 'output', None):
+            print('--- child output (truncated) ---')
+            print(e.output)
+            print('--- end child output ---')
         return False
     except Exception as e:
         stop_event.set()
@@ -381,7 +412,7 @@ def main():
                            for k in ("triggers", "actions", "events", "locals"))
 
             if not _has_source_jsons(map_dir, mapname):
-                print(f"⚠️ 注意：缺少源 JSON（triggers/actions/events/locals）。已在后台自动修补：{mapname}（生成信息将写入 {mapname}_report.json）")
+                print(f"⚠️ Note: source JSONs (triggers/actions/events/locals) are missing. Repair started in background for: {mapname} (generation info will be written to {mapname}_report.json)")
                 done_event, result = _spawn_background_map_parser(mapname, map_dir)
             else:
                 done_event = None
@@ -392,15 +423,15 @@ def main():
             # If we spawned a background repair, wait for it to finish now and report a concise summary.
             if done_event is not None:
                 # wait with a small dot-progress to avoid blocking print interleaving
-                print('ℹ️ 等待后台修补完成...', end='', flush=True)
+                print('ℹ️ Waiting for background repair to complete...', end='', flush=True)
                 while not done_event.wait(timeout=0.5):
                     print('.', end='', flush=True)
-                print('\n✅ 修补完成。', end=' ')
+                print('\nRepair complete.', end=' ')
                 try:
                     # 简洁单行提示，用户可自行查看目录或 report
-                    print(f'修补完成 - 请查看：{map_dir}')
+                    print(f'Repair complete - please check: {map_dir}')
                 except Exception:
-                    print('修补完成 - 请检查对应目录以获取详情。')
+                    print('Repair complete - please check the corresponding directory for details.')
     finally:
         if server:
             print('Stopping HTTP server...')
