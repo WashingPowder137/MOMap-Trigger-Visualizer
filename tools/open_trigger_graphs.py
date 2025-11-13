@@ -210,7 +210,8 @@ def generate_from_map(map_path, auto_open=False):
         script_path = vt
     else:
         script_path = ROOT / 'visualize_triggers.py'
-    cmd = [sys.executable, str(script_path), '--map', str(map_path)]
+    # Call visualize_triggers.py in quiet mode by default; caller can edit this file to remove --quiet
+    cmd = [sys.executable, str(script_path), '--map', str(map_path), '--quiet']
     stop_event = threading.Event()
     spinner_thread = threading.Thread(target=_spinner, args=(f"Generating {map_path.name}...", stop_event), daemon=True)
     spinner_thread.start()

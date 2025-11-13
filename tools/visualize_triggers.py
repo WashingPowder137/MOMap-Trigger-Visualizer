@@ -30,6 +30,27 @@ from pathlib import Path
 # Repository root (two levels up from tools/ file)
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
+# In-memory generation log collector. Messages appended here will be
+# written into the map's *_report.json under `generation_log` when done.
+_GEN_LOG: list[str] = []
+
+def _log(msg: str, level: str = 'INFO', print_always: bool = False, *, quiet: bool = False):
+    import time
+    ts = time.strftime('%Y-%m-%d %H:%M:%S')
+    entry = f"[{ts}] {level}: {msg}"
+    try:
+        _GEN_LOG.append(entry)
+    except Exception:
+        pass
+    if not quiet or print_always:
+        try:
+            print(entry)
+        except Exception:
+            try:
+                print(entry.encode('ascii', errors='replace').decode('ascii'))
+            except Exception:
+                pass
+
 # ---------- dependency checks ----------
 missing = []
 try:
@@ -162,7 +183,6 @@ DEFAULT_LAYOUT = {
 # debug defaults
 DEFAULT_DEBUG = {
     "enable": False,
-    "show_panel": True,
 }
 
 # ---- try load external config (优先级更高) ----
@@ -185,6 +205,8 @@ _user_dbg = CFG.get('debug', {})
 if not isinstance(_user_dbg, dict):
     _user_dbg = {'enable': bool(_user_dbg)}
 CFG['debug'] = _deep_merge(DEFAULT_DEBUG, _user_dbg)
+# Normalize debug config to only expose the 'enable' flag to generated assets
+CFG['debug'] = {'enable': bool(CFG.get('debug', {}).get('enable', False))}
 
 # ---- derive runtime constants from CFG ----
 THEME = (CFG["ui"]["theme"] or "dark").lower()
@@ -241,7 +263,7 @@ def load_conditions_dict(yml_path: Path) -> dict[int, dict]:
             pass
     return out
 
-def merge_overrides(base: dict[int, dict], override_path: Path, top_key: str):
+def merge_overrides(base: dict[int, dict], override_path: Path, top_key: str, *, quiet: bool = False):
     """Shallow merge: only add/override specific subkeys like produces_edges / references."""
     if not override_path.exists():
         return
@@ -256,9 +278,9 @@ def merge_overrides(base: dict[int, dict], override_path: Path, top_key: str):
             cur = base.setdefault(code, {})
             for kk, vv in (v or {}).items():
                 cur[kk] = vv
-        print(f"ℹ️ Applied overrides from {override_path}")
+        _log(f"Applied overrides from {override_path}", level='INFO', quiet=quiet)
     except Exception as e:
-        print(f"⚠️ Failed to apply overrides from {override_path}: {e}")
+        _log(f"Failed to apply overrides from {override_path}: {e}", level='WARNING', quiet=quiet)
 
 # ---------- normalization ----------
 def _iter_actions_normalized(acts):
@@ -1677,7 +1699,7 @@ def resolve_json(map_dir: Path, kind: str, map_name: str) -> Path:
         if c.exists(): return c
     raise FileNotFoundError(f"Missing {kind} JSON. Tried: " + ", ".join(str(c) for c in candidates))
 
-def ensure_jsons_via_map_parser(map_arg: str|None, map_dir: Path|None, map_name: str) -> Path|None:
+def ensure_jsons_via_map_parser(map_arg: str|None, map_dir: Path|None, map_name: str, *, quiet: bool = False) -> Path|None:
     """
     如果缺少 *_triggers/_actions/_events.json，则尝试自动调用 map_parser.py 生成。
     返回实际可用的 map_dir（生成成功后就是 ./data/maps/<mapname>），否则返回 None。
@@ -1730,27 +1752,27 @@ def ensure_jsons_via_map_parser(map_arg: str|None, map_dir: Path|None, map_name:
             parser_py = c
             break
     if not parser_py:
-        print("⚠️ 找不到 map_parser.py，无法自动生成 JSON。尝试的路径: " + ', '.join(str(c) for c in candidates))
+        _log("map_parser.py not found, cannot auto-generate JSON. Tried: " + ', '.join(str(c) for c in candidates), level='WARNING', quiet=quiet)
         return None
 
     import subprocess, sys as _sys
     try:
-        print(f"ℹ️ 正在调用 map_parser 解析：{map_file}")
+        _log(f"Invoking map_parser to parse: {map_file}", level='INFO', quiet=quiet)
         # 这里仅传入 --map，让你的 map_parser 走“自动目录优先”的分支
         # Run from repository root so map_parser's relative output logic behaves consistently
         repo_root = Path(__file__).resolve().parents[1]
         subprocess.check_call([_sys.executable, str(parser_py), str(map_file)], cwd=str(repo_root))
     except subprocess.CalledProcessError as e:
-        print(f"❌ map_parser 运行失败：{e}")
+        _log(f"map_parser failed: {e}", level='ERROR', quiet=quiet)
         return None
 
     # 4) 生成后的目录固定是 ./data/maps/<map_name>（你的 map_parser 约定）
     out_dir = REPO_ROOT / 'data' / 'maps' / map_name
     if out_dir.exists() and _has_all_json(out_dir, map_name):
-        print(f"✅ 生成成功：{out_dir}")
+        _log(f"Generation succeeded: {out_dir}", level='INFO', quiet=quiet)
         return out_dir
 
-    print("⚠️ map_parser 运行后仍未找到完整的 JSON。")
+    _log("map_parser ran but full JSON set still not found.", level='WARNING', quiet=quiet)
     return None
 
 # ---------- CLI ----------
@@ -1761,6 +1783,7 @@ def main(argv=None):
     ap.add_argument('--actions-yml', default=str(REPO_ROOT / 'data' / 'dicts' / 'merged' / 'actions_all.yml'))
     ap.add_argument('--conditions-yml', default=str(REPO_ROOT / 'data' / 'dicts' / 'merged' / 'conditions_all.yml'))
     ap.add_argument('--out', default=None, help='Output HTML (default: <script dir>/<mapname>_trigger_graph.html)')
+    ap.add_argument('--quiet', action='store_true', help='Suppress verbose generation output; write capture to <map>_report.json')
     args = ap.parse_args(argv)
 
     map_dir = Path(args.map_dir) if args.map_dir else resolve_map_dir(args.map)
@@ -1770,11 +1793,11 @@ def main(argv=None):
                         else (Path(args.map).name if args.map else ''))
         # 如果没法猜到名字，就沿用后面 guess_map_name 的逻辑
         map_name_temp = guessed_name or 'temp'
-        auto_dir = ensure_jsons_via_map_parser(args.map, map_dir, map_name_temp)
+        auto_dir = ensure_jsons_via_map_parser(args.map, map_dir, map_name_temp, quiet=args.quiet)
         if auto_dir and auto_dir.exists():
             map_dir = auto_dir
         else:
-            print('❌ Could not resolve map directory. Use --map-dir or --map (name/dir/.map)')
+            _log('Could not resolve map directory. Use --map-dir or --map (name/dir/.map)', level='ERROR', print_always=True, quiet=args.quiet)
             return 2
         
     map_name = guess_map_name(args.map, map_dir) if args.map else map_dir.name
@@ -1784,7 +1807,8 @@ def main(argv=None):
         actions_path  = resolve_json(map_dir, 'actions',  map_name)
         events_path   = resolve_json(map_dir, 'events',   map_name)
     except FileNotFoundError as e:
-        print('❌', e); return 2
+        _log(str(e), level='ERROR', print_always=True, quiet=args.quiet)
+        return 2
 
     locals_path = map_dir / f"{map_name}_locals.json"
     out_html = Path(args.out) if args.out else (map_dir / f"{map_name}_trigger_graph.html")
@@ -1792,10 +1816,10 @@ def main(argv=None):
     actions_yml = Path(args.actions_yml)
     conditions_yml = Path(args.conditions_yml)
     if not actions_yml.exists():
-        print(f'❌ actions YAML not found: {actions_yml}')
+        _log(f'actions YAML not found: {actions_yml}', level='ERROR', print_always=True, quiet=args.quiet)
         return 2
     if not conditions_yml.exists():
-        print(f'❌ conditions YAML not found: {conditions_yml}')
+        _log(f'conditions YAML not found: {conditions_yml}', level='ERROR', print_always=True, quiet=args.quiet)
         return 2
 
     triggers_json = load_json(triggers_path)
@@ -1808,8 +1832,8 @@ def main(argv=None):
 
     # Overrides (optional)
     over_dir = REPO_ROOT / 'data' / 'dicts' / 'overrides'
-    merge_overrides(actions_dict,    over_dir/'actions_edges.yml',    'actions')
-    merge_overrides(conditions_dict, over_dir/'conditions_refs.yml',  'conditions')
+    merge_overrides(actions_dict,    over_dir/'actions_edges.yml',    'actions', quiet=args.quiet)
+    merge_overrides(conditions_dict, over_dir/'conditions_refs.yml',  'conditions', quiet=args.quiet)
 
     # Fallbacks (only if not defined)
     for k, v in {
@@ -1834,7 +1858,21 @@ def main(argv=None):
         ed['label'] = canon_label(ed.get('label', ''))
 
     export_pyvis(G, out_html)
-    print(f"✅ Graph built: {out_html}")
+    # Record a concise success line and persist the captured generation log into the map's report JSON
+    _log(f"Graph built: {out_html}", level='INFO', print_always=not args.quiet, quiet=args.quiet)
+    try:
+        report_path = map_dir / f"{map_name}_report.json"
+        rep = {}
+        if report_path.exists():
+            try:
+                rep = json.loads(report_path.read_text(encoding='utf-8')) or {}
+            except Exception:
+                rep = {}
+        rep['generation_log'] = _GEN_LOG[:]
+        report_path.write_text(json.dumps(rep, ensure_ascii=False, indent=2), encoding='utf-8')
+        _log(f"Wrote generation log into: {report_path}", level='INFO', quiet=args.quiet)
+    except Exception as e:
+        _log(f"Failed to write generation log into report: {e}", level='WARNING', quiet=args.quiet)
     return 0
 
 if __name__ == '__main__':
@@ -1842,7 +1880,8 @@ if __name__ == '__main__':
         sys.exit(main())
     except Exception as e:
         import traceback
-        traceback.print_exc()
+        tb = traceback.format_exc()
+        _log(tb, level='ERROR', print_always=True)
         try:
             input("\nPress Enter to exit...")
         except Exception:
