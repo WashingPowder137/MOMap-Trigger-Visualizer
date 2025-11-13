@@ -44,7 +44,7 @@ interact:                           # 可调：注入到前端的参数
   Z_MAX: 0.6                        # 缩放倍率大于等于 Z_MAX 时，视作“很近”
   OP_AT_FAR: 1.0                    # “很远”时，不透明度更高
   OP_AT_NEAR: 0.45                  # “很近”时，不透明度更低
-  LABEL_HIDE_BELOW: 0.33            # 缩放倍率小于 LABEL_HIDE_BELOW 时，隐藏结点标签
+  LABEL_HIDE_BELOW: 0.35            # 缩放倍率小于 LABEL_HIDE_BELOW 时，隐藏结点标签
   INCLUDE_TWO_HOPS: true            # 选中结点时，是否高亮两跳邻居
   EDGE_HILITE_MODE: outgoing        # 选中结点时，只高亮从结点向外连出的箭头
   TOOLTIP_TRACKING: zoom_only
@@ -54,7 +54,7 @@ interact:                           # 可调：注入到前端的参数
   # 'always'        选中期间每帧都跟随（物理抖动/布局变化也流畅跟随）
   # 'none'          从不自动跟随（只在点击高亮时定位一次）
   HUD_FADE_DELAY_MS: 1800           # 没有操作多久时间后，提示缩放倍率的悬浮框开始淡出
-  HUD_FADE_DURATION_MS: 1000        # 淡出动画时长，单位都是毫秒
+  HUD_FADE_DURATION_MS: 1000        # 淡出动画时长
 
 layout:
   enable_cache: true        # 如需后续加缓存可用；当前实现会忽略
@@ -81,5 +81,4 @@ layout:
   edge_weight: 0.5
 
 debug:
-  enable: false
-  show_panel: false
+  enable: true
