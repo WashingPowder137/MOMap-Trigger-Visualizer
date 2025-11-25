@@ -30,6 +30,8 @@ from pathlib import Path
 # Repository root (two levels up from tools/ file)
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
+TOOL_VERSION = "1.3.0"
+
 # In-memory generation log collector. Messages appended here will be
 # written into the map's *_report.json under `generation_log` when done.
 _GEN_LOG: list[str] = []
@@ -164,9 +166,13 @@ DEFAULT_CFG = {
         "EDGE_HILITE_MODE": "outgoing",      # outgoing|incoming|both
         "TOOLTIP_TRACKING": "zoom_only",     # zoom_only|zoom_and_drag|always|none
         # 当缩放倍率低于此值时自动隐藏节点 labels；参考 high/low highlight 的阈值
-        "LABEL_HIDE_BELOW": 0.35,
+        # 废弃功能，现在“技术上”会始终显示标签，不过它们实际上会在过小的缩放倍率下不可见
+        # 保留的唯一原因是尽量减少代码的修改以免不可预见的问题
+        "LABEL_HIDE_BELOW": 0.0,
         "HUD_FADE_DELAY_MS": 2000,
         "HUD_FADE_DURATION_MS": 1000,
+        "DIM_UPDATE_INTERVAL_MS": 120,       # 结点/边透明度渐变更新间隔（毫秒）
+        # 限制透明度更新的频率，以减少前端性能开销，提升帧数
     }
 }
 
@@ -188,6 +194,7 @@ DEFAULT_DEBUG = {
 # ---- try load external config (优先级更高) ----
 # 你可以把路径定成 data/config/trigger_viz.yml 或同目录 config.yml
 CFG_PATHS = [
+    Path(REPO_ROOT / "config.yml"),
     Path("data/config/trigger_viz.yml"),
     Path("data/config/trigger_viz.json"),
     Path("data/config/trigger_viz.toml"),
@@ -751,6 +758,7 @@ def _append_custom_js(html_path: Path, node_details: dict | None = None, debug_i
 /* ===== Mental Omega Trigger Graph – injected interaction script ===== */
 window.__THEME = "{THEME}";                    // 注入主题色 'dark' | 'light'，若未替换则自动按 <body> 背景判断
 window.__CFG_INTERACT = {CFG_INTERACT_JSON};   // 注入用户设置
+window.__TRIGGER_VIZ_VERSION = "{TOOL_VERSION}"; // 当前可视化脚本版本（用于客户端版本检查
 // Load external node details and debug info (fetch adjacent JSON files)
 window.__NODE_DETAILS = {};
 // small fallback: expose the debug config immediately so HUD can appear even if fetch() is blocked (file://)
@@ -813,7 +821,7 @@ window.__DEBUG = {"debug_cfg": %s};
                     else { window.__DEBUG = j || {}; }
                     console.log('[TriggerGraph] debug sidecar applied:', window.__DEBUG);
                     __DBG_STAB_SET = false;
-                    __updateDebugHUD(window.__DEBUG);
+                    try { const _d = (window.__DEBUG && window.__DEBUG.debug_cfg) ? window.__DEBUG.debug_cfg : null; if (_d && _d.enable) __updateDebugHUD(window.__DEBUG); } catch(e){}
                 } catch(e){ console.warn('[TriggerGraph] apply debug failed', e); }
             }
             function __fetchDebug(url, isFallback){
@@ -860,6 +868,10 @@ window.__DEBUG = {"debug_cfg": %s};
   const HUD_BORDER_RADIUS    = "8px";
   const HUD_FONT             = "12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace";
   let   __hudFadeTimer = null;
+
+  // 透明度重算的节流间隔（毫秒）
+  const DIM_UPDATE_INTERVAL = (window.__CFG_INTERACT?.DIM_UPDATE_INTERVAL_MS ?? 120);
+  let __dimLastUpdate = 0;
   
   // ---- 每帧跟随（仅在选中状态下运行） ----
   let __followRAF = null;
@@ -962,27 +974,61 @@ window.__DEBUG = {"debug_cfg": %s};
     function __updateDebugHUD(info){
         if (!info) return;
         const d = __ensureDebugHUD();
+
+        // 版本号（由 Python 写入 debug JSON 的 tool_version）
+        const ver = (typeof info.tool_version === 'string' && info.tool_version.trim() !== '')
+            ? info.tool_version
+            : '(未知)';
+
         // 获取缩放（缓存与原始）
-        let cached = (window.__VIS_LAST_SCALE == null ? '?' : (Number.isFinite(window.__VIS_LAST_SCALE) ? window.__VIS_LAST_SCALE.toFixed(3) : String(window.__VIS_LAST_SCALE)));
+        let cached = (window.__VIS_LAST_SCALE == null
+            ? '?'
+            : (Number.isFinite(window.__VIS_LAST_SCALE)
+                ? window.__VIS_LAST_SCALE.toFixed(3)
+                : String(window.__VIS_LAST_SCALE)));
+
         let raw = '?';
-        try { if (typeof network !== 'undefined' && network && network.getScale){ raw = network.getScale(); raw = Number.isFinite(raw)? raw.toFixed(3): String(raw); } } catch(e){}
+        try {
+            if (typeof network !== 'undefined' && network && network.getScale) {
+                const s = network.getScale();
+                raw = Number.isFinite(s) ? s.toFixed(3) : String(s);
+            }
+        } catch(e){}
+
         // 兼容：如果字段是字符串数字，尝试转成数值
-        if (info && typeof info.size_score === 'string') { const n = parseFloat(info.size_score); if (!Number.isNaN(n)) info.size_score = n; }
-        if (info && typeof info.node_weight === 'string') { const n = parseFloat(info.node_weight); if (!Number.isNaN(n)) info.node_weight = n; }
-        if (info && typeof info.edge_weight === 'string') { const n = parseFloat(info.edge_weight); if (!Number.isNaN(n)) info.edge_weight = n; }
-        const hasScore = (info && typeof info.size_score === 'number' && Number.isFinite(info.size_score));
+        if (info && typeof info.size_score === 'string') {
+            const n = parseFloat(info.size_score);
+            if (!Number.isNaN(n)) info.size_score = n;
+        }
+        if (info && typeof info.node_weight === 'string') {
+            const n = parseFloat(info.node_weight);
+            if (!Number.isNaN(n)) info.node_weight = n;
+        }
+        if (info && typeof info.edge_weight === 'string') {
+            const n = parseFloat(info.edge_weight);
+            if (!Number.isNaN(n)) info.edge_weight = n;
+        }
+
+        const hasScore   = (info && typeof info.size_score === 'number' && Number.isFinite(info.size_score));
         const hasWeights = (info && typeof info.node_weight === 'number' && typeof info.edge_weight === 'number');
-        const scoreLine = hasScore ? `分数: ${info.size_score.toFixed(2)} (节点权重=${info.node_weight}, 边权重=${info.edge_weight})` : '分数: (等待加载...)';
+
+        const scoreLine = hasScore
+            ? `分数: ${info.size_score.toFixed(2)} (节点权重=${info.node_weight}, 边权重=${info.edge_weight})`
+            : '分数: (等待加载...)';
+
         const nodesLine = (typeof info.node_count === 'number' ? info.node_count : '(待)');
         const edgesLine = (typeof info.edge_count === 'number' ? info.edge_count : '(待)');
         const iterLine  = (typeof info.stab_iter === 'number' ? info.stab_iter : '(待)');
+
         d.innerHTML = `
             <div><b>调试面板</b></div>
+            <div>版本: ${ver}</div>
             <div>节点: ${nodesLine} &nbsp; 边: ${edgesLine}</div>
             <div>迭代次数(stab_iter): ${iterLine}</div>
             <div>${scoreLine}</div>
             <div>缩放(缓存): ${cached} &nbsp; 缩放(实时): ${raw}</div>
             <div id="dbg_stab_time">稳定耗时: (等待)</div>
+            <div id="dbg_stab_progress">稳定进度: (等待)</div>
         `;
     }
 
@@ -1223,6 +1269,60 @@ window.__DEBUG = {"debug_cfg": %s};
     }catch(e){}
   }
 
+  // 新增：节流版 resetDim，避免在缩放事件中每帧全量刷新
+  function __resetDimThrottled(force){
+    try {
+      const now = (typeof performance !== 'undefined' && performance.now)
+        ? performance.now()
+        : Date.now();
+
+      // 非强制模式下，如果距离上次刷新还没超过间隔，就直接返回
+      if (!force && (now - __dimLastUpdate) < DIM_UPDATE_INTERVAL) return;
+
+      __dimLastUpdate = now;
+      __resetDim();
+    } catch(e){}
+  }
+
+  function __updateEdgeOpacityForScale(){
+    try {
+      const scale = __getAccurateScale();
+      const baseOpacity = __baseEdgeOpacityForScale(scale);
+
+      const edgesAll = network.body.data.edges.get();
+      edgesAll.forEach(e => {
+        const col = __edgeOrigColor(e);
+        // 保留原有 color 对象里的其他字段（如 highlight / hover），只更新 color+opacity
+        if (typeof e.color === 'object' && e.color !== null) {
+          e.color = Object.assign({}, e.color, {
+            color: col,
+            opacity: baseOpacity
+          });
+        } else {
+          e.color = { color: col, opacity: baseOpacity };
+        }
+      });
+      network.body.data.edges.update(edgesAll);
+    } catch(e){}
+  }
+
+  // 为“只更新边透明度”增加节流封装
+  let __edgeDimLastUpdate = 0;
+  function __updateEdgeOpacityForScaleThrottled(force){
+    try {
+      const now = (typeof performance !== 'undefined' && performance.now)
+        ? performance.now()
+        : Date.now();
+
+      // 和 resetDim 一样：距离上次不足 DIM_UPDATE_INTERVAL 就直接返回
+      if (!force && (now - __edgeDimLastUpdate) < DIM_UPDATE_INTERVAL) return;
+
+      __edgeDimLastUpdate = now;
+      __updateEdgeOpacityForScale();
+    } catch(e){}
+  }
+
+
   function __highlightSelection(selectedId, pointer){
     const scale = __getAccurateScale();
     const baseOpacity = __baseEdgeOpacityForScale(scale);
@@ -1368,17 +1468,256 @@ window.__DEBUG = {"debug_cfg": %s};
     window.__LABEL_COLOR_NORMAL = isDark ? "#e5e7eb" : "#111111";
     window.__LABEL_COLOR_FADED  = isDark ? "rgba(229,231,235,0.26)" : "rgba(17,17,17,0.22)";
 
+    const DUMMY = "__DUMMY__";
+
+    // 插入一个不可见的 dummy 节点，用于触发初始的 selection 事件
+    function __forceDummySelection() {
+        try {
+            if (!network || !network.body || !network.body.data) return;
+            const node = network.body.data.nodes.get(DUMMY);
+            if (!node) return;
+
+            // 核心：触发 highlight pipeline + partial redraw
+            network.setSelection({nodes:[DUMMY], edges:[]}, true);
+        } catch (e) {
+            console.warn("dummy selection failed:", e);
+        }
+    }
+
+    // 页面初始化后第一次调用
+    network.once("afterDrawing", () => {
+        setTimeout(()=>__forceDummySelection(), 0);
+    });
+
+    network.on("stabilized", () => {
+        setTimeout(()=>__forceDummySelection(), 0);
+    });
+
+    // 在 draw 之前，将 dummy 的绘制清除掉
+    network.on("beforeDrawing", (ctx) => {
+        const node = network.body.nodes[DUMMY];
+        if (node) node.options.color = {
+            border: "rgba(0,0,0,0)",
+            background: "rgba(0,0,0,0)",
+            highlight: {border: "rgba(0,0,0,0)", background: "rgba(0,0,0,0)"},
+            hover: {border: "rgba(0,0,0,0)", background: "rgba(0,0,0,0)"},
+        };
+    });
+
     if (typeof network === 'undefined' || !network || !network.body) {
       return setTimeout(bindWhenReady, 50);
     }
 
-        // keep an updated cached scale after fit or stabilization so initial scale reflects fitted view
+    // keep an updated cached scale after fit or stabilization so initial scale reflects fitted view
     try {
         // 关键事件：每次都刷新缓存缩放并更新 HUD
-    network.on('fit', () => { try { __updateLastScale(); __resetDim(); __updateDebugHUD(window.__DEBUG); __showZoomHUD(__getAccurateScale()); } catch(e){} });
-        network.on('stabilizationIterationsDone', () => { try { __updateLastScale(); __updateDebugHUD(window.__DEBUG); __showZoomHUD(__getAccurateScale()); } catch(e){} });
-        network.on('stabilized', () => { try { __updateLastScale(); __updateDebugHUD(window.__DEBUG); __showZoomHUD(__getAccurateScale()); } catch(e){} });
-        network.on('animationFinished', () => { try { __updateLastScale(); __updateDebugHUD(window.__DEBUG); __showZoomHUD(__getAccurateScale()); } catch(e){} });
+        //--------------------------------------------------------------------
+        // Helper: refresh scale + HUD
+        //--------------------------------------------------------------------
+        //--------------------------------------------------------------------
+        // Helper: refresh scale + visibility + HUD
+        //--------------------------------------------------------------------
+        function __refreshHUD() {
+            try {
+                // 更新缓存的缩放倍率
+                __updateLastScale();
+                const z = __getAccurateScale();
+
+                // 如果当前没有选中任何节点 / 边，就按最新缩放重算一次“基线样式”
+                // （避免把高亮状态冲掉）
+                try {
+                    const noNodeSelected =
+                        (typeof __LAST_SELECTED_ID   === 'undefined' || __LAST_SELECTED_ID   == null);
+                    const noEdgeSelected =
+                        (typeof __LAST_SELECTED_EDGE === 'undefined' || __LAST_SELECTED_EDGE == null);
+
+                    if (noNodeSelected && noEdgeSelected) {
+                        __resetDimThrottled(true);   // 关键：这里重新根据 z 刷新能见度/label 显示
+                        // 参数使用 true，强制刷新不节流
+                    }
+                } catch (e) {}
+
+                // 更新缩放 HUD
+                __showZoomHUD(z);
+
+                // 如开启调试，则刷新调试面板
+                const dbg = (window.__DEBUG && window.__DEBUG.debug_cfg)
+                        ? window.__DEBUG.debug_cfg
+                        : null;
+                if (dbg && dbg.enable) {
+                    __updateDebugHUD(window.__DEBUG);
+                }
+            } catch (e) {}
+        }
+        //====================================================================
+        // 1. 事件：fit（缩放后）
+        //====================================================================
+        network.on('fit', () => {
+            __refreshHUD();
+        });
+
+
+        //====================================================================
+        // 2. 事件：animationFinished（手动画布或 fit 后）
+        //====================================================================
+        network.on('animationFinished', () => {
+            __refreshHUD();
+        });
+
+
+        //====================================================================
+        // 3. 稳定：记录开始时间（如果有该事件）
+        //====================================================================
+        let __stabStart = null;
+
+        try {
+            network.on('startStabilizing', () => {
+                try {
+                    __stabStart = (performance && performance.now)
+                                ? performance.now()
+                                : Date.now();
+                } catch (e) {
+                    __stabStart = Date.now();
+                }
+            });
+        } catch (e) {
+            // 如果版本里没有 startStabilizing，忽略即可
+        }
+
+
+        //====================================================================
+        // 4. 稳定进度：计算百分比并写入 HUD
+        //====================================================================
+        network.on('stabilizationProgress', (params) => {
+            try {
+                const el = document.getElementById('dbg_stab_progress');
+                if (!el) return;
+
+                const iter  = (params.iterations ?? params.iteration) ?? null;
+                const total = params.total ?? null;
+
+                let text;
+                if (iter != null && total != null && total > 0) {
+                    const pct = Math.round((iter / total) * 10000) / 100;
+                    text = `迭代: ${iter}/${total}  进度: ${pct}%`;
+                } else if (iter != null) {
+                    text = `迭代: ${iter} (进度未知)`;
+                } else {
+                    text = `迭代: ? (进度未知)`;
+                }
+
+                el.textContent = "稳定进度: " + text;
+            } catch (e) {}
+        });
+
+
+        //====================================================================
+        // 5. 核心：稳定迭代完成 ——> 写耗时 + 关物理 + 停模拟
+        //====================================================================
+        network.on('stabilizationIterationsDone', (params) => {
+
+            //----------------------------------------------------------------
+            // 写稳定耗时
+            //----------------------------------------------------------------
+            try {
+                const endTs = (performance && performance.now)
+                            ? performance.now()
+                            : Date.now();
+
+                const dt = (__stabStart != null)
+                        ? (endTs - __stabStart) / 1000.0
+                        : 0;
+
+                const tEl = document.getElementById('dbg_stab_time');
+                if (tEl) tEl.textContent = `稳定耗时: ${dt.toFixed(2)}s`;
+            } catch (e) {}
+
+
+            //----------------------------------------------------------------
+            // 最后一帧进度（避免最后一次 progress 事件丢失）
+            //----------------------------------------------------------------
+            try {
+                const pEl = document.getElementById('dbg_stab_progress');
+                if (pEl && params) {
+                    const iter  = (params.iterations ?? params.iteration) ?? null;
+                    const total = params.total ?? null;
+
+                    let text;
+                    if (iter != null && total != null && total > 0) {
+                        const pct = Math.round(iter / total * 10000) / 100;
+                        text = `迭代: ${iter}/${total}  进度: ${pct}%`;
+                    } else if (iter != null) {
+                        text = `迭代: ${iter} (进度未知)`;
+                    } else {
+                        text = `迭代: ? (进度未知)`;
+                    }
+                    pEl.textContent = "稳定进度: " + text;
+                }
+            } catch (e) {}
+
+
+            //----------------------------------------------------------------
+            // 最重要：稳定后立即关闭物理 + 停止模拟（阻止发散、阻止“第二轮”）
+            //----------------------------------------------------------------
+            try {
+                network.setOptions({
+                    physics: {
+                        enabled: false,
+                        stabilization: { enabled: false }
+                    }
+                });
+
+                if (typeof network.stopSimulation === 'function') {
+                    network.stopSimulation();
+                }
+            } catch (e) {}
+
+
+            //----------------------------------------------------------------
+            // 最后更新 HUD
+            //----------------------------------------------------------------
+            __refreshHUD();
+        });
+
+
+        //====================================================================
+        // 6. stabilized（无须关物理，只作为兜底更新 HUD）
+        //====================================================================
+        network.on('stabilized', () => {
+            __refreshHUD();
+        });
+
+
+        // 如果开启调试，监听 stabilizationProgress 并在 HUD 中显示进度信息
+        try {
+            const _dbg = (window.__DEBUG && window.__DEBUG.debug_cfg) ? window.__DEBUG.debug_cfg : null;
+            if (_dbg && _dbg.enable) {
+                try {
+                    network.on('stabilizationProgress', function(params){
+                        try {
+                            const el = document.getElementById('dbg_stab_progress');
+                            if (!el) return;
+
+                            const iter  = (params && (params.iterations ?? params.iteration)) ?? null;
+                            const total = (params && params.total) ?? null;
+
+                            let s;
+
+                            if (iter != null && total != null && total > 0) {
+                                const pct = Math.round(iter / total * 10000) / 100;  // 两位小数
+                                s = `迭代: ${iter}/${total}  进度: ${pct}%`;
+                            } else if (iter != null) {
+                                s = `迭代: ${iter} (进度未知)`;
+                            } else {
+                                s = `迭代: ? (进度未知)`;
+                            }
+
+                            el.textContent = '稳定进度: ' + s;
+                        } catch(e){}
+                    });
+                } catch(e){}
+            }
+        } catch(e){}
     } catch(e){}
 
         // 已移除早期的延迟轮询校准逻辑；现在依赖 fit / stabilized / zoom 事件即时更新缩放与高亮。
@@ -1392,7 +1731,7 @@ window.__DEBUG = {"debug_cfg": %s};
                 try {
                     const info = window.__DEBUG;
                     if (info && typeof info.size_score === 'number' && Number.isFinite(info.size_score)) {
-                        __updateDebugHUD(info);
+                        try { const _d=(window.__DEBUG&&window.__DEBUG.debug_cfg)?window.__DEBUG.debug_cfg:null; if(_d&&_d.enable) __updateDebugHUD(info); } catch(e){}
                         clearInterval(timer);
                         return;
                     }
@@ -1402,20 +1741,32 @@ window.__DEBUG = {"debug_cfg": %s};
         })();
 
     network.on('selectNode', (params) => {
-      __LAST_SELECTED_ID = null;
-      __LAST_SELECTED_ID = params.nodes[0];
-      __highlightSelection(__LAST_SELECTED_ID, params.pointer);
+      const id = params.nodes[0];
+
+      // 选中假结点时，不触发高亮逻辑，也不记录 __LAST_SELECTED_ID
+      if (id === DUMMY) {
+        return;
+      }
+
+      __LAST_SELECTED_ID = id;
+      __LAST_SELECTED_EDGE = null;   // 确保互斥
+
+      __highlightSelection(id, params.pointer);
       // 先停一次，防止策略切换后残留
       __stopFollow();
       __alignTooltipByPolicy('select');
     });
+
     network.on('deselectNode', () => {
       __LAST_SELECTED_ID = null;
       if (__LAST_SELECTED_EDGE == null) {
         __stopFollow();
         __resetDim(); __hideTooltip();
       }
+      // 取消选中时，尝试选中假结点，使 partial redraw 继续生效
+      setTimeout(()=>__forceDummySelection(), 0);
     });
+
     network.on('selectEdge', (params) => {
       __LAST_SELECTED_ID   = null;                 // 互斥
       __LAST_SELECTED_EDGE = params.edges[0];
@@ -1423,30 +1774,69 @@ window.__DEBUG = {"debug_cfg": %s};
       __stopFollow();
       __alignTooltipByPolicy('select');
     });
+
     network.on('deselectEdge', () => {
       __LAST_SELECTED_EDGE = null;
       if (__LAST_SELECTED_ID == null) {            // 若没选中节点，才真正复位
         __stopFollow();
         __resetDim(); __hideTooltip();
+        // 取消选中时，尝试选中假结点，使 partial redraw 继续生效
+        setTimeout(()=>__forceDummySelection(), 0);
       }
     });
+
     network.on('click', (params) => {
       if (!params.nodes.length && !params.edges.length) { 
         __LAST_SELECTED_ID = null;
         __LAST_SELECTED_EDGE = null;
         __stopFollow();
-        __resetDim(); __hideTooltip(); }
+        __resetDim(); __hideTooltip();
+        // 取消选中时，尝试选中假结点，使 partial redraw 继续生效
+        // 和 deselect 事件里重复，但保险起见保留
+        setTimeout(()=>__forceDummySelection(), 0);
+      }
     });
-        network.on('zoom', () => {
-            try { __updateLastScale(); } catch(e){}
-            if (__LAST_SELECTED_ID != null || __LAST_SELECTED_EDGE != null) {
-                __alignTooltipByPolicy('zoom');
-            } else {
-                __resetDim();
-            }
-            __showZoomHUD(__getAccurateScale());
-            __updateDebugHUD(window.__DEBUG);
-        });
+
+    network.on('zoom', () => {
+        try { __updateLastScale(); } catch(e){}
+
+        // 1) vis 内部是否有任何选中（包括 dummy）
+        let hasSelection = false;
+        try {
+            const selNodes = network.getSelectedNodes();
+            const selEdges = network.getSelectedEdges();
+            hasSelection = (selNodes && selNodes.length > 0) ||
+                        (selEdges && selEdges.length > 0);
+        } catch (e) {
+            hasSelection = false;
+        }
+
+        // 2) 是否有“语义上的真实选择”（真节点 / 真边）
+        const hasRealSelection =
+            (__LAST_SELECTED_ID   != null) ||
+            (__LAST_SELECTED_EDGE != null);
+
+        // 真选中时：只做 tooltip 对齐，不乱动高亮状态
+        if (hasRealSelection) {
+            __alignTooltipByPolicy('zoom');
+        }
+
+        // 完全没有任何选中（连 dummy 也没选）→ 走 full reset
+        if (!hasSelection) {
+            __resetDimThrottled(false);
+        }
+        // 有选中但只是 dummy（或其它“无语义”的选中）→ 只更新边透明度
+        else if (!hasRealSelection) {
+            __updateEdgeOpacityForScaleThrottled(false);
+        }
+
+        __showZoomHUD(__getAccurateScale());
+        try {
+            const _d=(window.__DEBUG&&window.__DEBUG.debug_cfg)?window.__DEBUG.debug_cfg:null;
+            if(_d&&_d.enable) __updateDebugHUD(window.__DEBUG);
+        } catch(e){}
+    });
+
 
     network.on('dragging', function () {
       if (__LAST_SELECTED_ID != null || __LAST_SELECTED_EDGE != null) {
@@ -1454,44 +1844,71 @@ window.__DEBUG = {"debug_cfg": %s};
       }
     });
 
-    // 可选：物理动画结束时再“对齐”一次（即便 rAF 在跑也无碍）
-    network.on('stabilized', () => {
-            if (__LAST_SELECTED_ID != null || __LAST_SELECTED_EDGE != null) __alignTooltipByPolicy('other');
-            try {
-                if (window.__DEBUG && window.__DEBUG.debug_cfg && window.__DEBUG.debug_cfg.enable) {
-                    const gen = window.__DEBUG.generated_at || 0;
-                    // compute delta only once after stabilization (don't overwrite on subsequent stabilized events)
-                    if (!window.__DBG_STAB_SET) {
-                        const delta = ((Date.now()/1000) - gen).toFixed(2);
-                        const el = document.getElementById('dbg_stab_time');
-                        if (el) el.textContent = `Stabilized: ${delta}s`;
-                        window.__DBG_STAB_SET = true;
-                    }
-                }
-            } catch(e){}
-    });
     network.on('animationFinished', () => {
       if (__LAST_SELECTED_ID != null || __LAST_SELECTED_EDGE != null) __alignTooltipByPolicy('other');
     });
 
     // 初始按当前缩放设定基线 (may use placeholder scale; calibration will refine soon)
-    __resetDim();
+    // 参数使用 true，强制刷新不节流
+    __resetDimThrottled(true);
     try { setTimeout(__updateLastScale, 50); } catch(e){}
     // show initial HUD quickly (will update after calibration if scale changes)
     try { __showZoomHUD(__getAccurateScale()); } catch(e){}
-        // debug HUD
-        try {
-            if (window.__DEBUG && window.__DEBUG.debug_cfg && window.__DEBUG.debug_cfg.enable) {
-                __updateDebugHUD(window.__DEBUG);
-            }
-        } catch(e){}
-  });
+    // debug HUD: only create/update when debug is enabled in the sidecar/cfg
+    try {
+        const _dbg = (window.__DEBUG && window.__DEBUG.debug_cfg) ? window.__DEBUG.debug_cfg : null;
+        if (_dbg && _dbg.enable) {
+            __updateDebugHUD(window.__DEBUG);
+        }
+    } catch(e){}
+    // 初始时选中假结点，触发 partial redraw 优化
+    try { __forceDummySelection(); } catch(e){}
+});
+
+/***************************************************************************
+ * SIMPLE FPS METER
+***************************************************************************/
+(function(){
+    let last = performance.now();
+    let frames = 0;
+    let fps = 0;
+
+    const div = document.createElement("div");
+    div.style.position = "fixed";
+    div.style.right = "10px";
+    div.style.bottom = "10px";
+    div.style.padding = "4px 6px";
+    div.style.background = "rgba(0,0,0,0.6)";
+    div.style.color = "#0f0";
+    div.style.fontSize = "12px";
+    div.style.zIndex = 99999;
+    div.style.borderRadius = "4px";
+    div.textContent = "FPS: --";
+    document.body.appendChild(div);
+
+    function loop(){
+        const now = performance.now();
+        frames++;
+
+        // 每 250ms 更新一次显示（不会影响性能）
+        if (now - last >= 250){
+            fps = frames * 1000 / (now - last);
+            frames = 0;
+            last = now;
+            div.textContent = "FPS: " + fps.toFixed(1);
+        }
+        requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+})();
 
 })(); // IIFE end
 </script>
 """.replace("{THEME}", THEME).replace(
          "{CFG_INTERACT_JSON}",
          _json.dumps(CFG.get("interact", {}))
+     ).replace(
+         "{TOOL_VERSION}", TOOL_VERSION
      )
     # insert the debug_cfg fallback into the JS (so HUD can appear even if fetch is blocked)
     js = js.replace('%s', _json.dumps(CFG.get('debug', {})))
@@ -1580,6 +1997,18 @@ def export_pyvis(G: nx.DiGraph, out_html: Path):
             arrows='to', 
             origColor=color,
             edgeLabel=label,)
+        
+    # === add a dummy node to trigger partial redraw optimization ===
+    net.add_node(
+        "__DUMMY__",
+        label="",
+        color="rgba(0,0,0,0)",  # 完全透明
+        size=0.01,
+        hidden=False,           # 必须可见以参与 selection pipeline
+        opacity=0.0,            # 尽可能隐藏
+        physics=False,          # 不参与布局
+        x=0, y=0                # 不重要
+    )
 
     # physics & interaction (no hover tooltip)
     # adapt stabilization iterations based on graph size (consider both nodes and edges)
@@ -1600,16 +2029,32 @@ def export_pyvis(G: nx.DiGraph, out_html: Path):
     # compute a simple combined "size score" = node_w * N + edge_w * E
     size_score = node_w * node_count + edge_w * edge_count
 
-    # scaling thresholds: convert mt/lt (which are node-count thresholds) into score thresholds
-    mt_score = node_w * mt + edge_w * (mt * 1.5)   # assume average edges per node ~1.5 at threshold
-    lt_score = node_w * lt + edge_w * (lt * 2.0)   # assume denser for large graphs
+    # thresholds are treated as size_score thresholds.
+    # If your config used node-counts previously, convert them to score
+    # using node_weight/edge_weight externally. The code compares the
+    # computed `size_score` directly to the configured thresholds.
+    try:
+        mt_val = float(mt)
+    except Exception:
+        mt_val = float(DEFAULT_LAYOUT['medium_threshold'])
+    try:
+        lt_val = float(lt)
+    except Exception:
+        lt_val = float(DEFAULT_LAYOUT['large_threshold'])
 
-    if size_score > lt_score:
+    if size_score > lt_val:
         stab_iter = it_lrg
-    elif size_score > mt_score:
+    elif size_score > mt_val:
         stab_iter = it_med
     else:
         stab_iter = it_def
+
+    # 额外：根据节点数调 nodeDistance
+    # 基础距离 280，随 sqrt(N) 缓慢增加，避免 600+ 点的图挤成一团
+    import math
+    base_dist   = layout_cfg.get('base_node_distance', 280)
+    scale_dist  = layout_cfg.get('node_distance_scale', 6.0)  # 可在 config.yml 中覆盖
+    node_dist   = base_dist + scale_dist * math.sqrt(max(node_count, 1))
 
     options = {
         "interaction": {
@@ -1635,13 +2080,18 @@ def export_pyvis(G: nx.DiGraph, out_html: Path):
             "enabled": True,                  # 可调：启动/关闭物理模拟
             "solver": "repulsion",            # 可调：物理算法（barnesHut/repulsion/forceAtlas2Based等）
             "repulsion": {
-                "nodeDistance": 320,          # 可调：结点间目标距离
-                "centralGravity": 0.10,       # 可调：收拢到中心的力度
-                "springLength": 200,          # 可调：边为弹簧时的自然长度
-                "springConstant": 0.025,      # 可调：边为弹簧时的刚度
-                "damping": 0.10               # 可调：阻尼系数
+                "nodeDistance": node_dist,       # 可调：结点间目标距离
+                "centralGravity": 0.06,          # 可调：收拢到中心的力度
+                "springLength": node_dist*0.55,  # 可调：边为弹簧时的自然长度
+                "springConstant": 0.020,         # 可调：边为弹簧时的刚度
+                "damping": 0.10                  # 可调：阻尼系数
             },
-            "stabilization": {"iterations": stab_iter}    # 可调：稳定时迭代次数
+            "stabilization": {
+                "enabled": True,              # 自动稳定
+                "iterations": stab_iter,      # 可调：稳定时最大迭代次数
+                "updateInterval": 25,         # 可调：每隔多少次迭代更新一次画布
+                "fit": True                   # 稳定后自动 fit 画布
+            }    
         }
     }
     net.set_options(json.dumps(options))
@@ -1662,6 +2112,7 @@ def export_pyvis(G: nx.DiGraph, out_html: Path):
         'node_weight': node_w,
         'edge_weight': edge_w,
         'size_score': size_score,
+        'tool_version': TOOL_VERSION,
     }
 
     nd_path = out_html.with_name(out_html.stem + "_node_details.json")

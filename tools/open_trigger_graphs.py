@@ -25,6 +25,8 @@ if not MAPS_DIR.exists():
 
 HTTP_PORT = 8000
 
+TOOL_VERSION = '1.3.0'
+
 
 def find_graphs():
     out = []
@@ -72,20 +74,62 @@ def list_maps():
         print('No generated trigger_graph HTML found under', MAPS_DIR)
         return maps
     print('\nFound trigger graphs:')
+    import json
+
     for i, e in enumerate(maps):
+        status = ''
         # compute status
         if e['has_html'] and e['has_node'] and e['has_debug']:
             status = 'COMPLETE'
+
+            # --- Load debug JSON to check version ---
+            try:
+                with open(e['debug_json'], 'r', encoding='utf-8') as f:
+                    dbg = json.load(f)
+                file_ver = dbg.get('tool_version')
+
+                if isinstance(file_ver, str) and file_ver.strip():
+                    cmp = compare_version(file_ver, TOOL_VERSION)
+                    if cmp < 0:
+                        status = f'OUTDATED (v{file_ver})'
+                    elif cmp > 0:
+                        status = f'NEWER (v{file_ver})'
+                    else:
+                        status = f'COMPLETE (v{file_ver})'
+                else:
+                    # No version: indicates an old graph generated before the version feature was introduced
+                    status = 'UNKNOWN_VERSION'
+                
+            except Exception:
+                status = 'UNKNOWN_VERSION'
+
         elif e['has_html'] and not (e['has_node'] or e['has_debug']):
             status = 'MISSING_JSON'
         elif not e['has_html'] and (e['has_node'] or e['has_debug']):
             status = 'MISSING_HTML'
         else:
             status = 'ALL_MISSING'
+
         name = e['html'].name if e['html'] else '<no html>'
         print(f"[{i}] {e['map']}: {name} ({status})")
     return maps
 
+
+def compare_version(a: str, b: str) -> int:
+    """
+    Return:
+      1  if a > b
+      0  if a == b
+     -1  if a < b
+    """
+    pa = [int(x) for x in a.split('.') if x.isdigit()]
+    pb = [int(x) for x in b.split('.') if x.isdigit()]
+    for i in range(max(len(pa), len(pb))):
+        va = pa[i] if i < len(pa) else 0
+        vb = pb[i] if i < len(pb) else 0
+        if va > vb: return 1
+        if va < vb: return -1
+    return 0
 
 def start_http_server(root, port=HTTP_PORT):
     # spawn a simple http.server in the background
@@ -200,10 +244,14 @@ def _spinner(msg, stop_event):
     sys.stdout.flush()
 
 
-def generate_from_map(map_path, auto_open=False):
+def generate_from_map(map_path, auto_open=False, show_progress: bool = True):
     """Call visualize_triggers.py --map <map> and optionally auto-open when done.
+    Runs in quiet mode by default (no spinner/long prints). Set show_progress=True to show spinner and prints.
     Returns True on success, False on failure."""
-    print('Generating graph for', map_path)
+    # Always show a concise spinner when called from the interactive client (default),
+    # but avoid printing long command output or child logs to the console.
+    if show_progress:
+        print('Generating graph for', map_path)
     # If the user moved visualize_triggers.py into tools/, prefer that path (keeps local tools together)
     vt = ROOT / 'tools' / 'visualize_triggers.py'
     if vt.exists():
@@ -213,58 +261,72 @@ def generate_from_map(map_path, auto_open=False):
     # Call visualize_triggers.py in quiet mode by default; caller can edit this file to remove --quiet
     cmd = [sys.executable, str(script_path), '--map', str(map_path), '--quiet']
     stop_event = threading.Event()
-    spinner_thread = threading.Thread(target=_spinner, args=(f"Generating {map_path.name}...", stop_event), daemon=True)
-    spinner_thread.start()
+    spinner_thread = None
+    if show_progress:
+        spinner_thread = threading.Thread(target=_spinner, args=(f"Generating {map_path.name}...", stop_event), daemon=True)
+        spinner_thread.start()
     try:
         # Run the visualizer from the repository root so relative paths resolve correctly.
         repo_root = ROOT
-        # ensure logs directory
-        logs_dir = repo_root / 'data' / 'logs'
-        logs_dir.mkdir(parents=True, exist_ok=True)
-        log_path = logs_dir / f'visualize_{map_path.stem}.log'
-        print(f'Running: {cmd}'); print(f'  cwd={repo_root}'); print(f'  log -> {log_path}')
-        # open log file for child stdout/stderr
-        logf = open(str(log_path), 'w', encoding='utf-8')
-        with subprocess.Popen(cmd, cwd=str(repo_root), stdout=logf, stderr=subprocess.STDOUT) as p:
+        # prefer report.json as the canonical place for generation logs
+        report_path = repo_root / 'data' / 'maps' / f"{map_path.stem}" / f"{map_path.stem}_report.json"
+        if show_progress:
+            print(f'  report -> {report_path}')
+        # run child quietly: the child (visualize_triggers.py) itself writes generation_log into report.json
+        with subprocess.Popen(cmd, cwd=str(repo_root), stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT) as p:
             try:
                 p.wait(timeout=30)
             except subprocess.TimeoutExpired:
-                # child still running; user can inspect the log
-                print(f'Generation still running after 30s. Check log: {log_path}')
-                # do not kill the process; leave it running for manual inspection
+                # child still running; show concise timeout hint
+                if show_progress:
+                    print(f'Generation still running after 30s. Check report: {report_path}')
+                # leave the process running for manual inspection
                 return False
             if p.returncode != 0:
                 # read last portion of log for diagnostic
-                try:
-                    logf.flush()
-                    logf.close()
-                    out = log_path.read_text(encoding='utf-8', errors='replace')
-                    snippet = out[-4000:]
-                except Exception:
-                    snippet = '<could not read child output>'
-                raise subprocess.CalledProcessError(p.returncode, cmd, output=snippet)
-        # ensure log file closed
-        try:
-            logf.close()
-        except Exception:
-            pass
+                # child returned non-zero; rely on the report.json for details
+                raise subprocess.CalledProcessError(p.returncode, cmd)
+        # no separate log file is created by the client; the report.json is the canonical log
     except subprocess.CalledProcessError as e:
         stop_event.set()
-        spinner_thread.join()
-        print(f'Generation failed with exit code {e.returncode}')
-        if getattr(e, 'output', None):
-            print('--- child output (truncated) ---')
-            print(e.output)
-            print('--- end child output ---')
+        if spinner_thread:
+            spinner_thread.join()
+        # concise failure: tell user where to find details and offer choices
+        print(f'Generation failed (exit {getattr(e, "returncode", "?")}).')
+        print('You can:')
+        print("  (a) Open generation report")
+        print("  (b) Return to main menu")
+        choice = input('Your choice (a/b): ').strip().lower()
+        if choice == 'a':
+            try:
+                # open the report JSON in default browser
+                webbrowser.open(report_path.as_uri())
+            except Exception:
+                print(f'Cannot open {report_path}; please inspect it manually.')
+        # otherwise return to main UI
         return False
     except Exception as e:
         stop_event.set()
-        spinner_thread.join()
+        if spinner_thread:
+            spinner_thread.join()
         print('Generation failed:', e)
+        print('You can:')
+        print("  (a) Open generation report")
+        print("  (b) Return to main menu")
+        choice = input('Your choice (a/b): ').strip().lower()
+        if choice == 'a':
+            try:
+                webbrowser.open(report_path.as_uri())
+            except Exception:
+                print(f'Cannot open {report_path}; please inspect it manually.')
         return False
+
+    # normal completion: clean up spinner and report
     stop_event.set()
-    spinner_thread.join()
-    print(f'Generation finished for {map_path.name}')
+    if spinner_thread:
+        spinner_thread.join()
+    if show_progress:
+        print(f'Generation finished for {map_path.name}')
     return True
 
 
@@ -419,6 +481,19 @@ def main():
                 done_event = None
                 result = None
 
+            # Version check before opening
+            try:
+                import json
+                with open(entry['debug_json'], 'r', encoding='utf-8') as f:
+                    dbg = json.load(f)
+                file_ver = dbg.get('tool_version')
+                if isinstance(file_ver, str) and compare_version(file_ver, TOOL_VERSION) < 0:
+                    print(f"⚠️  Note: this trigger graph was generated using an older version ({file_ver}).")
+                    print("   It is recommended to re-generate using the latest visualization tool.\n")
+            except Exception:
+                pass
+
+            # finally open the graph
             open_graph_entry(entry)
 
             # If we spawned a background repair, wait for it to finish now and report a concise summary.
