@@ -44,7 +44,9 @@ interact:                           # 可调：注入到前端的参数
   Z_MAX: 0.6                        # 缩放倍率大于等于 Z_MAX 时，视作“很近”
   OP_AT_FAR: 1.0                    # “很远”时，不透明度更高
   OP_AT_NEAR: 0.45                  # “很近”时，不透明度更低
-  LABEL_HIDE_BELOW: 0.35            # 缩放倍率小于 LABEL_HIDE_BELOW 时，隐藏结点标签
+  LABEL_HIDE_BELOW: 0.0             # 缩放倍率小于 LABEL_HIDE_BELOW 时，隐藏结点标签
+  # 废弃功能，现在“技术上”会始终显示标签，不过它们实际上会在过小的缩放倍率下不可见
+  # 仍然保留的唯一原因是尽量减少代码的修改以免不可预见的问题
   INCLUDE_TWO_HOPS: true            # 选中结点时，是否高亮两跳邻居
   EDGE_HILITE_MODE: outgoing        # 选中结点时，只高亮从结点向外连出的箭头
   TOOLTIP_TRACKING: zoom_only
@@ -55,6 +57,8 @@ interact:                           # 可调：注入到前端的参数
   # 'none'          从不自动跟随（只在点击高亮时定位一次）
   HUD_FADE_DELAY_MS: 1800           # 没有操作多久时间后，提示缩放倍率的悬浮框开始淡出
   HUD_FADE_DURATION_MS: 1000        # 淡出动画时长
+  DIM_UPDATE_INTERVAL_MS: 120       # 结点/边透明度渐变更新间隔（毫秒）
+  # 限制透明度更新的频率，以减少前端性能开销，提升帧数
 
 layout:
   enable_cache: true        # 如需后续加缓存可用；当前实现会忽略
@@ -70,15 +74,18 @@ layout:
   # —— 归一化盒子（防止挤在一起） ——
   box_size: 3000
   box_pad_ratio: 0.05       # 四周留白比例
-  # —— 分级迭代（大型图加速用） ——
-  medium_threshold: 1000    # size_score 超过 medium_threshold 则使用 iterations_medium 迭代次数
-  large_threshold: 2000     # size_score 超过 large_threshold 则使用 iterations_large 迭代次数
-  iterations_default: 100   # 否则，就使用 iterations_default 迭代次数
-  iterations_medium: 50
-  iterations_large: 25
-  # 权重：用于混合 node/edge 计算 size_score = node_weight * N + edge_weight * E
+  # —— 分级迭代 ——
+  # 自定义不同规模的地图中，物理计算达到稳定时的迭代次数
+  # 可以使小图的迭代次数较少，大图的迭代次数较多，以让小图迅速稳定，且提升大型图的布局质量
+  # 也可以反过来设置以减少大型图的计算量，但质量会有所下降
+  # 权重：用于计算 size_score = node_weight * N + edge_weight * E
   node_weight: 1.0
   edge_weight: 0.5
+  medium_threshold: 1000    # size_score 大于该值时，迭代 iterations_medium 次数
+  large_threshold: 2000     # size_score 大于该值时，迭代 iterations_large 次数
+  iterations_default: 250   # size_score 比上面两个值都小时，迭代该次数
+  iterations_medium: 500
+  iterations_large: 750
 
 debug:
   enable: true
