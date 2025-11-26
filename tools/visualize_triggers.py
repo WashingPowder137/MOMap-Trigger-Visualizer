@@ -30,7 +30,7 @@ from pathlib import Path
 # Repository root (two levels up from tools/ file)
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-TOOL_VERSION = "1.3.1"
+TOOL_VERSION = "1.4.0"
 
 # In-memory generation log collector. Messages appended here will be
 # written into the map's *_report.json under `generation_log` when done.
@@ -766,11 +766,15 @@ window.__DEBUG = {"debug_cfg": %s};
 // fetch of sidecar JSONs is done later inside the IIFE after interaction helpers are defined
 
 (function(){
-  // ---------- 私有 DOM 就绪工具（避免与其它脚本同名冲突） ----------
-  const __moOnReady = (fn) => {
-    if (document.readyState !== 'loading') { try { fn(); } catch(e){} }
-    else { document.addEventListener('DOMContentLoaded', () => { try { fn(); } catch(e){} }, { once:true }); }
-  };
+    // ---------- 私有 DOM 就绪工具（避免与其它脚本同名冲突） ----------
+    const __moOnReady = (fn) => {
+        if (document.readyState !== 'loading') { try { fn(); } catch(e){} }
+        else { document.addEventListener('DOMContentLoaded', () => { try { fn(); } catch(e){} }, { once:true }); }
+    };
+
+    // 是否已经应用过布局缓存（避免重复）
+    window.__LAYOUT_APPLIED = window.__LAYOUT_APPLIED || false;
+
 
     // Accurate scale helper: prefer the last observed scale after fit/stabilize to avoid
     // the initial 1x placeholder returned before vis-network finishes fitting the graph.
@@ -778,6 +782,168 @@ window.__DEBUG = {"debug_cfg": %s};
     function __updateLastScale(){ try { window.__VIS_LAST_SCALE = network.getScale(); } catch(e){} }
     function __getAccurateScale(){ try { return (window.__VIS_LAST_SCALE || network.getScale() || 1.0); } catch(e){ return 1.0; } }
 
+      // ====== 布局缓存：兼容判断 + 应用 ======
+    let __LAYOUT_APPLIED = false;
+
+    function __isLayoutCompatible(layoutObj, dbg) {
+        if (!layoutObj || !dbg) return false;
+
+        // 1) tool_version 不一致，直接当不兼容
+        if (layoutObj.tool_version && dbg.tool_version &&
+            layoutObj.tool_version !== dbg.tool_version) {
+        return false;
+        }
+
+        // 2) 如果以后你在 layout.json 里也加了 node_count / edge_count / map_name，
+        //    这里会自动生效；现在这些字段缺失也不会影响兼容性判断。
+        if (typeof layoutObj.node_count === 'number' &&
+            typeof dbg.node_count === 'number' &&
+            layoutObj.node_count !== dbg.node_count) {
+        return false;
+        }
+        if (typeof layoutObj.edge_count === 'number' &&
+            typeof dbg.edge_count === 'number' &&
+            layoutObj.edge_count !== dbg.edge_count) {
+        return false;
+        }
+        if (layoutObj.map_name && dbg.map_name &&
+            layoutObj.map_name !== dbg.map_name) {
+        return false;
+        }
+
+        // 其他情况就认为“基本兼容”
+        return true;
+    }
+
+    function __maybeApplyCachedLayout() {
+        if (window.__LAYOUT_APPLIED) return;
+
+        try {
+        if (typeof network === 'undefined' || !network || !network.body) {
+            return; // network 还没就绪，稍后再试
+        }
+
+        const dbg = window.__DEBUG;
+        if (!dbg || !dbg.map_name) {
+            // 还没加载到 debug.json，就等下一次
+            return;
+        }
+
+        // HTML 跟 layout.json 在同一目录，文件名是 "<map_name>_layout.json"
+        const layoutUrl = `${dbg.map_name}_layout.json`;
+
+        fetch(layoutUrl).then(r => {
+            if (!r.ok) throw new Error('status ' + r.status + ' @' + layoutUrl);
+            return r.json();
+        }).then(data => {
+            if (!data) return;
+
+            // layout.json 现在的格式：
+            // {
+            //   "tool_version": "...",
+            //   "generated_at": "...",
+            //   "node_positions": { "01000000": {x,y}, ... }
+            // }
+            const layoutMeta = data;
+            const positions = data.node_positions || data.positions || data;
+
+            if (!__isLayoutCompatible(layoutMeta, dbg)) {
+            console.log('[TriggerGraph] layout cache incompatible, ignored');
+            return;
+            }
+
+            const nodesData = network.body.data.nodes;
+            const allNodes  = nodesData.get();
+
+            allNodes.forEach(n => {
+            const idStr = String(n.id);
+            let pos = positions[idStr];
+
+            // 兼容一点：如果 ID 有前导 0 / 去掉前导 0
+            if (!pos && /^0\d+$/.test(idStr)) {
+                const stripped = idStr.replace(/^0+/, '');
+                pos = positions[stripped] || positions[parseInt(stripped || '0', 10)];
+            }
+            if (!pos && positions[n.id]) {
+                pos = positions[n.id];
+            }
+
+            if (pos && typeof pos.x === 'number' && typeof pos.y === 'number') {
+                n.x = pos.x;
+                n.y = pos.y;
+                n.physics = false;
+
+                if(n.fixed) {
+                    n.fixed = false;
+                }
+            }
+            });
+
+            nodesData.update(allNodes);
+
+            // 新增：缓存布局时，把边改成“直线（关掉 smooth）”
+            try {
+                const edgesData = network.body.data.edges;
+                const allEdges  = edgesData.get();
+                allEdges.forEach(e => {
+                    // 把旧的平滑参数和 via 控制点统统清掉
+                    if (e.hasOwnProperty('via'))    delete e.via;
+                    if (e.hasOwnProperty('smooth')) delete e.smooth;
+
+                    // 方案A：完全直线
+                    // e.smooth = { enabled: false };
+
+                    // 方案B：轻微圆角
+                    e.smooth = {
+                        enabled: true,
+                        type: 'continuous',
+                        roundness: 0.10   // 越小越接近直线
+                    };
+                });
+                edgesData.update(allEdges);
+            } catch(e){}
+
+            try {
+                network.setOptions({
+                    edges: { 
+                        smooth: {
+                            enabled: true,
+                            type: 'continuous',
+                            roundness: 0.10   // 越小越接近直线
+                        } 
+                    }
+                });
+            } catch(e){}
+
+            // 关闭物理，避免再次迭代
+            try {
+                network.setOptions({
+                    physics: {
+                        enabled: false,
+                        stabilization: { enabled: false }
+                    }
+                });
+                if (typeof network.stopSimulation === 'function') {
+                network.stopSimulation();
+                }
+            } catch(e){}
+
+            try {
+                network.redraw();
+            } catch(e){}
+
+            window.__LAYOUT_APPLIED = true;
+            console.log('[TriggerGraph] layout cache applied from', layoutUrl);
+        }).catch(err => {
+            // 没文件 / 404 / 解析失败，都当无缓存，不报错
+            // console.log('[TriggerGraph] no layout cache:', err);
+        });
+        } catch (e) {
+        // 安全兜底
+        // console.warn('[TriggerGraph] apply layout cache failed', e);
+        }
+    }
+    
     // fetch sidecar JSONs and wire up debug HUD update when data arrives
     (function fetchSidecars(){
         try {
@@ -799,9 +965,11 @@ window.__DEBUG = {"debug_cfg": %s};
                 if (typeof j.edge_weight === 'string'){ const n = parseFloat(j.edge_weight); if(!Number.isNaN(n)) j.edge_weight = n; }
                 return j;
             }
+
             function __applyDebug(j){
                 try {
                     j = __coerceDebug(j);
+
                     // 若缺少 size_score/权重字段（旧版 debug JSON），尝试重建
                     if (j && (j.size_score === undefined || j.node_weight === undefined || j.edge_weight === undefined)) {
                         try {
@@ -817,13 +985,36 @@ window.__DEBUG = {"debug_cfg": %s};
                             }
                         } catch(e){}
                     }
-                    if (typeof window.__DEBUG === 'object' && window.__DEBUG){ Object.assign(window.__DEBUG, j); }
-                    else { window.__DEBUG = j || {}; }
+
+                    if (typeof window.__DEBUG === 'object' && window.__DEBUG){
+                        Object.assign(window.__DEBUG, j);
+                    } else {
+                        window.__DEBUG = j || {};
+                    }
                     console.log('[TriggerGraph] debug sidecar applied:', window.__DEBUG);
+
+                    // =======================================================
+                    // 布局缓存：尝试从 <map_name>_layout.json 读取并应用
+                    // 统一走 __maybeApplyCachedLayout，这里只负责“在 debug.json 到手后再试一次”
+                    // =======================================================
+                    try {
+                        __maybeApplyCachedLayout();
+                    } catch(e){}
+                    // =======================================================
+
                     __DBG_STAB_SET = false;
-                    try { const _d = (window.__DEBUG && window.__DEBUG.debug_cfg) ? window.__DEBUG.debug_cfg : null; if (_d && _d.enable) __updateDebugHUD(window.__DEBUG); } catch(e){}
-                } catch(e){ console.warn('[TriggerGraph] apply debug failed', e); }
+                    try {
+                        const _d = (window.__DEBUG && window.__DEBUG.debug_cfg)
+                             ? window.__DEBUG.debug_cfg
+                             : null;
+                        if (_d && _d.enable) __updateDebugHUD(window.__DEBUG);
+                    } catch(e){}
+
+                } catch(e){
+                    console.warn('[TriggerGraph] apply debug failed', e);
+                }
             }
+
             function __fetchDebug(url, isFallback){
                 if (!url) return Promise.reject('no-url');
                 return fetch(url).then(r=>{ if(!r.ok) throw new Error('status '+r.status+' @'+url); return r.json(); })
@@ -1059,6 +1250,51 @@ window.__DEBUG = {"debug_cfg": %s};
             <div id="dbg_stab_progress">${progressLine}</div>
         `;
     }
+
+    function __autoSaveLayoutToServer() {
+        try {
+            if (!network || !network.body) return;
+
+            // 1) 拿当前所有节点坐标
+            const positions = network.getPositions();  // { id: {x,y}, ... }
+
+            // 2) 推断 map_name（来自 debug JSON 最稳妥）
+            const mapName = (window.__DEBUG && window.__DEBUG.map_name)
+                ? window.__DEBUG.map_name
+                : null;
+
+            if (!mapName) {
+                console.warn('[TriggerGraph] no map_name in DEBUG; skip autosave layout');
+                return;
+            }
+
+            // 3) 构造 payload
+            const payload = {
+                map_name: mapName,
+                tool_version: window.__TRIGGER_VIZ_VERSION || 'unknown',
+                generated_at: new Date().toISOString(),
+                node_positions: positions
+            };
+
+            // 4) POST 到本地服务器的一个专用 endpoint
+            fetch('/__save_layout', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            }).then(r => {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            }).then(j => {
+                console.log('[TriggerGraph] layout autosaved:', j);
+            }).catch(err => {
+                console.warn('[TriggerGraph] layout autosave failed, you can still export manually:', err);
+            });
+
+        } catch (e) {
+            console.warn('[TriggerGraph] autoSaveLayout error:', e);
+        }
+    }
+
 
   // ---------- 工具 ----------
   function __baseEdgeOpacityForScale(scale){
@@ -1542,6 +1778,9 @@ window.__DEBUG = {"debug_cfg": %s};
       return setTimeout(bindWhenReady, 50);
     }
 
+    // network 已经可用，再尝试一次应用布局缓存
+    __maybeApplyCachedLayout();
+
     // keep an updated cached scale after fit or stabilization so initial scale reflects fitted view
     try {
         // 关键事件：每次都刷新缓存缩放并更新 HUD
@@ -1715,6 +1954,8 @@ window.__DEBUG = {"debug_cfg": %s};
                 }
 
             } catch (e) {}
+
+            try { __autoSaveLayoutToServer(); } catch(e){}
 
             // —— 你原先的：关闭物理 & 停止模拟 —— 
             try {
@@ -2149,6 +2390,8 @@ def export_pyvis(G: nx.DiGraph, out_html: Path):
     except TypeError:
         net.write_html(str(out_html), open_browser=False)
 
+    map_name = out_html.parent.name  # or你如果已有变量就直接用现成的
+
     # prepare debug info and write external JSONs to avoid inlining large payloads
     debug_info = {
         'generated_at': __import__('time').time(),
@@ -2160,6 +2403,7 @@ def export_pyvis(G: nx.DiGraph, out_html: Path):
         'edge_weight': edge_w,
         'size_score': size_score,
         'tool_version': TOOL_VERSION,
+        'map_name': map_name,
     }
 
     nd_path = out_html.with_name(out_html.stem + "_node_details.json")

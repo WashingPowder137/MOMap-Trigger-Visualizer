@@ -23,9 +23,9 @@ MAPS_DIR = ROOT / 'data' / 'maps'
 if not MAPS_DIR.exists():
     MAPS_DIR = ROOT / 'maps'
 
-HTTP_PORT = 8000
+HTTP_PORT = 8999
 
-TOOL_VERSION = '1.3.1'
+TOOL_VERSION = '1.4.0'
 
 
 def find_graphs():
@@ -70,50 +70,56 @@ def find_graphs():
 
 def list_maps():
     maps = find_graphs()
-    # show current tool version before listing maps
     print(f"\nCurrent version of the tool: v{TOOL_VERSION}")
     if not maps:
         print('No generated trigger_graph HTML found under', MAPS_DIR)
         return maps
+
     print('\nFound trigger graphs:')
     import json
 
     for i, e in enumerate(maps):
-        status = ''
-        # compute status
-        if e['has_html'] and e['has_node'] and e['has_debug']:
-            status = 'COMPLETE'
+        has_html = bool(e['has_html'])
+        has_node = bool(e['has_node'])
+        has_debug = bool(e['has_debug'])
 
-            # --- Load debug JSON to check version ---
+        # 1) 完整性
+        if has_html and has_node and has_debug:
+            complete_status = 'COMPLETE'
+        elif has_html and not (has_node or has_debug):
+            complete_status = 'MISSING_JSON'
+        elif not has_html and (has_node or has_debug):
+            complete_status = 'MISSING_HTML'
+        else:
+            complete_status = 'ALL_MISSING'
+
+        # 2) 版本
+        version_status = 'UNKNOWN_VERSION'
+        dbg_path = e.get('debug_json')
+        if dbg_path and Path(dbg_path).exists():
             try:
-                with open(e['debug_json'], 'r', encoding='utf-8') as f:
+                with open(dbg_path, 'r', encoding='utf-8') as f:
                     dbg = json.load(f)
                 file_ver = dbg.get('tool_version')
-
                 if isinstance(file_ver, str) and file_ver.strip():
                     cmp = compare_version(file_ver, TOOL_VERSION)
                     if cmp < 0:
-                        status = f'OUTDATED (v{file_ver})'
+                        version_status = f'OUTDATED v{file_ver}'
                     elif cmp > 0:
-                        status = f'NEWER (v{file_ver})'
+                        version_status = f'NEWER v{file_ver}'
                     else:
-                        status = f'COMPLETE (v{file_ver})'
-                else:
-                    # No version: indicates an old graph generated before the version feature was introduced
-                    status = 'UNKNOWN_VERSION'
-                
+                        version_status = f'v{file_ver}'
             except Exception:
-                status = 'UNKNOWN_VERSION'
+                version_status = 'UNKNOWN_VERSION'
 
-        elif e['has_html'] and not (e['has_node'] or e['has_debug']):
-            status = 'MISSING_JSON'
-        elif not e['has_html'] and (e['has_node'] or e['has_debug']):
-            status = 'MISSING_HTML'
-        else:
-            status = 'ALL_MISSING'
+        # 3) 缓存状态
+        mapname = e['map']
+        map_dir = e['html'].parent if e.get('html') else (MAPS_DIR / mapname)
+        cache_status = _cache_status(map_dir, mapname)
 
         name = e['html'].name if e['html'] else '<no html>'
-        print(f"[{i}] {e['map']}: {name} ({status})")
+        print(f"[{i}] {e['map']}: {name} ({complete_status}) ({version_status}) ({cache_status})")
+
     return maps
 
 
@@ -134,13 +140,34 @@ def compare_version(a: str, b: str) -> int:
     return 0
 
 def start_http_server(root, port=HTTP_PORT):
-    # spawn a simple http.server in the background
-    # Use sys.executable to ensure same Python
-    cmd = [sys.executable, '-m', 'http.server', str(port)]
-    print(f"Starting HTTP server at http://localhost:{port}/ (serving {root})")
-    # start in the directory
-    return subprocess.Popen(cmd, cwd=str(root), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # 使用自定义的 trigger_http_server.py，既能静态服务也能接收布局 POST
+    server_script = Path(__file__).parent / 'trigger_http_server.py'
+    if not server_script.exists():
+        # 兜底：如果脚本不存在，仍然用简单 http.server
+        cmd = [sys.executable, '-m', 'http.server', str(port)]
+        print(f"Starting simple HTTP server at http://localhost:{port}/ (serving {root}) [no layout autosave]")
+    else:
+        cmd = [sys.executable, str(server_script), str(port)]
+        print(f"Starting Trigger HTTP server at http://localhost:{port}/ (serving {root})")
 
+    return subprocess.Popen(
+        cmd,
+        cwd=str(root),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
+
+def _has_cache_files(map_dir: Path, mapname: str) -> bool:
+    """
+    简单判断该地图目录下是否存在布局缓存文件。
+    你可以根据实际情况调整候选文件名。
+    """
+    candidates = [
+        map_dir / f"{mapname}_layout_cache.json",
+        map_dir / f"{mapname}_layout.json",
+        map_dir / "layout_cache.json",
+    ]
+    return any(p.exists() for p in candidates)
 
 def open_graph_entry(entry):
     # ensure files are in place
@@ -149,6 +176,78 @@ def open_graph_entry(entry):
     url = f'http://localhost:{HTTP_PORT}/{rel.as_posix()}'
     print('Opening', url)
     webbrowser.open(url)
+
+def _find_cache_files(map_dir: Path, mapname: str):
+    """
+    返回该地图目录下可能的布局缓存文件列表。
+    目前已知命名：<mapname>_layout.json
+    同时预留几种扩展写法：
+      - <mapname>_layout.json
+      - <mapname>_layout_*.json
+      - <mapname>_layout_cache*.json
+      - layout_cache*.json
+    """
+    patterns = [
+        f"{mapname}_layout.json",
+        f"{mapname}_layout_*.json",
+        f"{mapname}_layout_cache*.json",
+        "layout_cache*.json",
+    ]
+    files = []
+    for pat in patterns:
+        files.extend(map_dir.glob(pat))
+    # 去重
+    return list({p for p in files if p.exists()})
+
+
+def _cache_status(map_dir: Path, mapname: str) -> str:
+    """
+    返回缓存状态：
+      - 'CACHED'
+      - 'CACHE_OUTDATED'
+      - 'NOT_CACHED'
+    """
+    cache_files = _find_cache_files(map_dir, mapname)
+    if not cache_files:
+        return 'NOT_CACHED'
+
+    mapfile = find_mapfile_for(mapname)
+    if mapfile and mapfile.exists():
+        latest_cache_mtime = max(p.stat().st_mtime for p in cache_files)
+        if mapfile.stat().st_mtime > latest_cache_mtime:
+            return 'CACHE_OUTDATED'
+    return 'CACHED'
+
+
+def _collect_source_jsons(map_dir: Path, mapname: str):
+    """
+    收集 triggers/actions/events/locals 四个源 JSON（带 mapname 前缀或无前缀都尝试）。
+    返回实际存在的文件列表。
+    """
+    out = []
+    for key in ("triggers", "actions", "events", "locals"):
+        p1 = map_dir / f"{mapname}_{key}.json"
+        p2 = map_dir / f"{key}.json"
+        if p1.exists():
+            out.append(p1)
+        elif p2.exists():
+            out.append(p2)
+    return out
+
+
+def _source_outdated(map_dir: Path, mapname: str) -> bool:
+    """
+    若 .map 比任何一个源 JSON 更新，则认为源 JSON 过时。
+    若 .map 或 4 个 JSON 不齐，则返回 False（交给其它逻辑处理）。
+    """
+    src_files = _collect_source_jsons(map_dir, mapname)
+    if len(src_files) < 4:
+        return False
+    mapfile = find_mapfile_for(mapname)
+    if not (mapfile and mapfile.exists()):
+        return False
+    latest_src_mtime = max(p.stat().st_mtime for p in src_files)
+    return mapfile.stat().st_mtime > latest_src_mtime
 
 
 def _spawn_background_map_parser(map_name: str, map_dir: Path):
@@ -213,6 +312,57 @@ def _spawn_background_map_parser(map_name: str, map_dir: Path):
     return done, result
 
 
+def _run_map_parser_sync(map_path: Path, show_progress: bool = True) -> bool:
+    """
+    同步调用 map_parser.py 解析 .map，重写 triggers/actions/events/locals/report。
+    返回 True 表示成功，False 表示失败或超时。
+    """
+    candidates = [
+        Path(__file__).parent / 'map_parser.py',
+        ROOT / 'map_parser.py',
+        ROOT / 'tools' / 'map_parser.py',
+    ]
+    parser_py = None
+    for c in candidates:
+        if c.exists():
+            parser_py = c
+            break
+    if not parser_py:
+        if show_progress:
+            print('⚠️ Could not locate map_parser.py; skip re-parsing.')
+        return False
+
+    if show_progress:
+        print(f"Re-parsing .map with {parser_py} ...")
+
+    cmd = [sys.executable, str(parser_py), str(map_path)]
+    try:
+        with subprocess.Popen(
+            cmd,
+            cwd=str(ROOT),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.STDOUT
+        ) as p:
+            try:
+                p.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                if show_progress:
+                    print("Map parsing still running after 30s, aborting. This is most likely bugged.")
+                return False
+            if p.returncode != 0:
+                if show_progress:
+                    print(f"Map parsing failed (exit {p.returncode}).")
+                return False
+    except Exception as e:
+        if show_progress:
+            print('Failed to run map_parser:', e)
+        return False
+
+    if show_progress:
+        print('Map parsing finished.')
+    return True
+
+
 def find_map_files():
     # scan project root for .map files
     out = []
@@ -247,53 +397,81 @@ def _spinner(msg, stop_event):
 
 
 def generate_from_map(map_path, auto_open=False, show_progress: bool = True):
-    """Call visualize_triggers.py --map <map> and optionally auto-open when done.
-    Runs in quiet mode by default (no spinner/long prints). Set show_progress=True to show spinner and prints.
-    Returns True on success, False on failure."""
-    # Always show a concise spinner when called from the interactive client (default),
-    # but avoid printing long command output or child logs to the console.
+    """从 .map 重新解析 + 清理缓存 + 生成新的 trigger graph。
+    返回 True 表示成功，False 表示失败。
+    """
+    map_path = Path(map_path)
+    mapname = map_path.stem
+    map_dir = MAPS_DIR / mapname
+
+    # 1) 先解析 .map -> 源 JSON
+    if not _run_map_parser_sync(map_path, show_progress=show_progress):
+        if show_progress:
+            print('Skip graph generation due to map parsing failure/timeout.')
+        return False
+
+    # 2) 删除旧的布局缓存
+    cache_files = _find_cache_files(map_dir, mapname)
+    if cache_files and show_progress:
+        print('Clearing layout cache files:', ', '.join(p.name for p in cache_files))
+    for cf in cache_files:
+        try:
+            cf.unlink()
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            if show_progress:
+                print('  Failed to remove', cf, ':', e)
+
+    # 3) 调用 visualize_triggers 生成新图
     if show_progress:
         print('Generating graph for', map_path)
-    # If the user moved visualize_triggers.py into tools/, prefer that path (keeps local tools together)
+
     vt = ROOT / 'tools' / 'visualize_triggers.py'
     if vt.exists():
         script_path = vt
     else:
         script_path = ROOT / 'visualize_triggers.py'
-    # Call visualize_triggers.py in quiet mode by default; caller can edit this file to remove --quiet
+
     cmd = [sys.executable, str(script_path), '--map', str(map_path), '--quiet']
     stop_event = threading.Event()
     spinner_thread = None
     if show_progress:
-        spinner_thread = threading.Thread(target=_spinner, args=(f"Generating {map_path.name}...", stop_event), daemon=True)
+        spinner_thread = threading.Thread(
+            target=_spinner,
+            args=(f"Generating {map_path.name}...", stop_event),
+            daemon=True
+        )
         spinner_thread.start()
+
+    repo_root = ROOT
+    report_path = repo_root / 'data' / 'maps' / f"{mapname}" / f"{mapname}_report.json"
+
     try:
-        # Run the visualizer from the repository root so relative paths resolve correctly.
-        repo_root = ROOT
-        # prefer report.json as the canonical place for generation logs
-        report_path = repo_root / 'data' / 'maps' / f"{map_path.stem}" / f"{map_path.stem}_report.json"
-        if show_progress:
-            print(f'  report -> {report_path}')
-        # run child quietly: the child (visualize_triggers.py) itself writes generation_log into report.json
-        with subprocess.Popen(cmd, cwd=str(repo_root), stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT) as p:
+        with subprocess.Popen(
+            cmd,
+            cwd=str(repo_root),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.STDOUT
+        ) as p:
             try:
                 p.wait(timeout=30)
             except subprocess.TimeoutExpired:
-                # child still running; show concise timeout hint
+                stop_event.set()
+                if spinner_thread:
+                    spinner_thread.join()
                 if show_progress:
-                    print(f'Generation still running after 30s. Check report: {report_path}')
-                # leave the process running for manual inspection
+                    print("Generation still running after 30s, aborting. This is most likely to have bugged.")
+                    print(f"Please check the generation report (if any): {report_path}")
                 return False
+
             if p.returncode != 0:
-                # read last portion of log for diagnostic
-                # child returned non-zero; rely on the report.json for details
                 raise subprocess.CalledProcessError(p.returncode, cmd)
-        # no separate log file is created by the client; the report.json is the canonical log
+
     except subprocess.CalledProcessError as e:
         stop_event.set()
         if spinner_thread:
             spinner_thread.join()
-        # concise failure: tell user where to find details and offer choices
         print(f'Generation failed (exit {getattr(e, "returncode", "?")}).')
         print('You can:')
         print("  (a) Open generation report")
@@ -301,11 +479,9 @@ def generate_from_map(map_path, auto_open=False, show_progress: bool = True):
         choice = input('Your choice (a/b): ').strip().lower()
         if choice == 'a':
             try:
-                # open the report JSON in default browser
                 webbrowser.open(report_path.as_uri())
             except Exception:
                 print(f'Cannot open {report_path}; please inspect it manually.')
-        # otherwise return to main UI
         return False
     except Exception as e:
         stop_event.set()
@@ -323,7 +499,6 @@ def generate_from_map(map_path, auto_open=False, show_progress: bool = True):
                 print(f'Cannot open {report_path}; please inspect it manually.')
         return False
 
-    # normal completion: clean up spinner and report
     stop_event.set()
     if spinner_thread:
         spinner_thread.join()
@@ -460,17 +635,27 @@ def main():
                     print("Suggestions:")
                     print("  - Place the missing sidecar JSON files next to the HTML (names above).\n  - Or run this script and press 'g' to generate from a .map if you have one.\n  - Or run: python visualize_triggers.py --map <mapname> to generate manually.")
                     continue
+
+            mapname = entry['map']
+            map_dir = entry.get('html').parent if entry.get('html') else (MAPS_DIR / mapname)
+
             # ensure HTTP server
             if server is None:
                 server = start_http_server(ROOT)
                 # give server a moment
                 time.sleep(0.3)
 
+            # 如果源 JSON 早于 .map，给出提醒
+            try:
+                if _source_outdated(map_dir, mapname):
+                    print(f"⚠️  Note: source JSONs for '{mapname}' seem older than the .map file.")
+                    print("   The graph may not reflect latest changes. Consider regenerating via 'g'.\n")
+            except Exception:
+                pass
+
             # Before opening: check whether the original source JSONs (triggers/actions/events/locals)
             # are present in the map directory. If missing, we will still open the HTML but spawn a
             # background map_parser to auto-fill them and inform the user.
-            mapname = entry['map']
-            map_dir = entry.get('html').parent if entry.get('html') else (MAPS_DIR / mapname)
             def _has_source_jsons(d: Path, name: str) -> bool:
                 # require ALL four source JSONs to be present; otherwise consider incomplete
                 return all((d / f"{name}_{k}.json").exists() or (d / f"{k}.json").exists()
