@@ -25,7 +25,7 @@ if not MAPS_DIR.exists():
 
 HTTP_PORT = 8000
 
-TOOL_VERSION = '1.3.0'
+TOOL_VERSION = '1.3.1'
 
 
 def find_graphs():
@@ -70,6 +70,8 @@ def find_graphs():
 
 def list_maps():
     maps = find_graphs()
+    # show current tool version before listing maps
+    print(f"\nCurrent version of the tool: v{TOOL_VERSION}")
     if not maps:
         print('No generated trigger_graph HTML found under', MAPS_DIR)
         return maps

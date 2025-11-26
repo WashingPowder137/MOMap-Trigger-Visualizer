@@ -30,7 +30,7 @@ from pathlib import Path
 # Repository root (two levels up from tools/ file)
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-TOOL_VERSION = "1.3.0"
+TOOL_VERSION = "1.3.1"
 
 # In-memory generation log collector. Messages appended here will be
 # written into the map's *_report.json under `generation_log` when done.
@@ -971,16 +971,17 @@ window.__DEBUG = {"debug_cfg": %s};
         }
         return d;
     }
+
     function __updateDebugHUD(info){
         if (!info) return;
         const d = __ensureDebugHUD();
 
-        // 版本号（由 Python 写入 debug JSON 的 tool_version）
+        // 版本号
         const ver = (typeof info.tool_version === 'string' && info.tool_version.trim() !== '')
             ? info.tool_version
             : '(未知)';
 
-        // 获取缩放（缓存与原始）
+        // 缩放信息
         let cached = (window.__VIS_LAST_SCALE == null
             ? '?'
             : (Number.isFinite(window.__VIS_LAST_SCALE)
@@ -995,7 +996,7 @@ window.__DEBUG = {"debug_cfg": %s};
             }
         } catch(e){}
 
-        // 兼容：如果字段是字符串数字，尝试转成数值
+        // 兼容：字符串数字 → number
         if (info && typeof info.size_score === 'string') {
             const n = parseFloat(info.size_score);
             if (!Number.isNaN(n)) info.size_score = n;
@@ -1020,6 +1021,33 @@ window.__DEBUG = {"debug_cfg": %s};
         const edgesLine = (typeof info.edge_count === 'number' ? info.edge_count : '(待)');
         const iterLine  = (typeof info.stab_iter === 'number' ? info.stab_iter : '(待)');
 
+        // === 时间行：优先使用“最终耗时”，没有的话才看 start_time ===
+        let timeLine;
+        if (Number.isFinite(__stab_duration_final) && __stab_duration_final > 0) {
+            timeLine = `稳定耗时: ${(__stab_duration_final / 1000).toFixed(2)}s`;
+        } else if (typeof __stab_start_time === 'number') {
+            const now = (typeof performance !== 'undefined' && typeof performance.now === 'function')
+                ? performance.now()
+                : Date.now();
+            const dt = (now - __stab_start_time) / 1000;
+            timeLine = `稳定耗时: ${dt.toFixed(2)}s (进行中)`;
+        } else {
+            timeLine = '稳定耗时: (等待)';
+        }
+
+        // === 进度行：同样只看缓存，不自己改写迭代数 ===
+        let progressLine;
+        if (typeof __stab_iterations_final === 'number' &&
+            typeof __stab_total_final      === 'number' &&
+            __stab_total_final > 0) {
+            const pct = Math.round(__stab_iterations_final / __stab_total_final * 10000) / 100;
+            progressLine = `稳定进度: 迭代: ${__stab_iterations_final}/${__stab_total_final}  进度: ${pct}%`;
+        } else if (typeof __stab_iterations_final === 'number') {
+            progressLine = `稳定进度: 迭代: ${__stab_iterations_final} (总步数未知)`;
+        } else {
+            progressLine = '稳定进度: (等待)';
+        }
+
         d.innerHTML = `
             <div><b>调试面板</b></div>
             <div>版本: ${ver}</div>
@@ -1027,8 +1055,8 @@ window.__DEBUG = {"debug_cfg": %s};
             <div>迭代次数(stab_iter): ${iterLine}</div>
             <div>${scoreLine}</div>
             <div>缩放(缓存): ${cached} &nbsp; 缩放(实时): ${raw}</div>
-            <div id="dbg_stab_time">稳定耗时: (等待)</div>
-            <div id="dbg_stab_progress">稳定进度: (等待)</div>
+            <div id="dbg_stab_time">${timeLine}</div>
+            <div id="dbg_stab_progress">${progressLine}</div>
         `;
     }
 
@@ -1462,6 +1490,12 @@ window.__DEBUG = {"debug_cfg": %s};
   let __LAST_SELECTED_ID = null;
   let __LAST_SELECTED_EDGE = null;
 
+  
+  let __stab_start_time = null;          // 稳定开始时间
+  let __stab_iterations_final = null;    // 最终迭代次数
+  let __stab_duration_final   = null;    // 耗时（毫秒）
+  let __stab_total_final      = null;    // 最终总步数
+
   __moOnReady(function bindWhenReady(){
     // 设置全局标签颜色（一次性）
     const isDark = __computeTheme();
@@ -1568,97 +1602,121 @@ window.__DEBUG = {"debug_cfg": %s};
         //====================================================================
         // 3. 稳定：记录开始时间（如果有该事件）
         //====================================================================
-        let __stabStart = null;
-
         try {
             network.on('startStabilizing', () => {
+                // 统一入口：一旦开始新一轮稳定，重置所有缓存
                 try {
-                    __stabStart = (performance && performance.now)
-                                ? performance.now()
-                                : Date.now();
+                    const now = (typeof performance !== 'undefined' &&
+                                 typeof performance.now === 'function')
+                        ? performance.now()
+                        : Date.now();
+                    __stab_start_time       = now;
+                    __stab_duration_final   = null;
+                    __stab_iterations_final = null;
+                    __stab_total_final      = null;
                 } catch (e) {
-                    __stabStart = Date.now();
+                    __stab_start_time       = Date.now();
+                    __stab_duration_final   = null;
+                    __stab_iterations_final = null;
+                    __stab_total_final      = null;
                 }
             });
         } catch (e) {
             // 如果版本里没有 startStabilizing，忽略即可
         }
 
-
         //====================================================================
         // 4. 稳定进度：计算百分比并写入 HUD
         //====================================================================
         network.on('stabilizationProgress', (params) => {
             try {
-                const el = document.getElementById('dbg_stab_progress');
-                if (!el) return;
-
-                const iter  = (params.iterations ?? params.iteration) ?? null;
-                const total = params.total ?? null;
-
-                let text;
-                if (iter != null && total != null && total > 0) {
-                    const pct = Math.round((iter / total) * 10000) / 100;
-                    text = `迭代: ${iter}/${total}  进度: ${pct}%`;
-                } else if (iter != null) {
-                    text = `迭代: ${iter} (进度未知)`;
-                } else {
-                    text = `迭代: ? (进度未知)`;
+                // 若某些版本没有触发 startStabilizing，则在第一次进度事件里兜底设置开始时间
+                if (__stab_start_time == null) {
+                    try {
+                        const now = (typeof performance !== 'undefined' &&
+                                     typeof performance.now === 'function')
+                            ? performance.now()
+                            : Date.now();
+                        __stab_start_time = now;
+                    } catch (e) {
+                        __stab_start_time = Date.now();
+                    }
                 }
 
-                el.textContent = "稳定进度: " + text;
+                const iter  = (params && (params.iterations ?? params.iteration)) ?? null;
+                const total = (params && params.total) ?? null;
+
+                if (iter  != null) __stab_iterations_final = iter;
+                if (total != null) __stab_total_final      = total;
+
+                // 实时 HUD（可选：你原来的行为）
+                const el = document.getElementById('dbg_stab_progress');
+                if (el) {
+                    if (iter != null && total != null && total > 0) {
+                        const pct = Math.round(iter / total * 10000) / 100;
+                        el.textContent = `稳定进度: 迭代: ${iter}/${total}  进度: ${pct}%`;
+                    } else if (iter != null) {
+                        el.textContent = `稳定进度: 迭代: ${iter} (进度未知)`;
+                    } else {
+                        el.textContent = "稳定进度: 迭代: ? (进度未知)";
+                    }
+                }
             } catch (e) {}
         });
-
 
         //====================================================================
         // 5. 核心：稳定迭代完成 ——> 写耗时 + 关物理 + 停模拟
         //====================================================================
         network.on('stabilizationIterationsDone', (params) => {
-
-            //----------------------------------------------------------------
-            // 写稳定耗时
-            //----------------------------------------------------------------
             try {
-                const endTs = (performance && performance.now)
-                            ? performance.now()
-                            : Date.now();
+                const iter  = (params && (params.iterations ?? params.iteration)) ?? null;
+                const total = (params && params.total) ?? null;
 
-                const dt = (__stabStart != null)
-                        ? (endTs - __stabStart) / 1000.0
-                        : 0;
+                if (iter  != null) __stab_iterations_final = iter;
+                if (total != null) __stab_total_final      = total;
 
-                const tEl = document.getElementById('dbg_stab_time');
-                if (tEl) tEl.textContent = `稳定耗时: ${dt.toFixed(2)}s`;
-            } catch (e) {}
-
-
-            //----------------------------------------------------------------
-            // 最后一帧进度（避免最后一次 progress 事件丢失）
-            //----------------------------------------------------------------
-            try {
-                const pEl = document.getElementById('dbg_stab_progress');
-                if (pEl && params) {
-                    const iter  = (params.iterations ?? params.iteration) ?? null;
-                    const total = params.total ?? null;
-
-                    let text;
-                    if (iter != null && total != null && total > 0) {
-                        const pct = Math.round(iter / total * 10000) / 100;
-                        text = `迭代: ${iter}/${total}  进度: ${pct}%`;
-                    } else if (iter != null) {
-                        text = `迭代: ${iter} (进度未知)`;
-                    } else {
-                        text = `迭代: ? (进度未知)`;
+                // 计算最终耗时
+                let dt_ms = 0;
+                try {
+                    const endTs = (typeof performance !== 'undefined' &&
+                                   typeof performance.now === 'function')
+                        ? performance.now()
+                        : Date.now();
+                    if (typeof __stab_start_time === 'number') {
+                        dt_ms = endTs - __stab_start_time;
                     }
-                    pEl.textContent = "稳定进度: " + text;
+                } catch(e) {
+                    if (typeof __stab_start_time === 'number') {
+                        dt_ms = Date.now() - __stab_start_time;
+                    }
                 }
+                __stab_duration_final = dt_ms;
+                __stab_start_time     = null;   // 标记“已经结束”
+
+                // 直接写最终 HUD 文本
+                const tEl = document.getElementById('dbg_stab_time');
+                if (tEl) {
+                    tEl.textContent = `稳定耗时: ${(dt_ms/1000).toFixed(2)}s`;
+                }
+
+                const pEl = document.getElementById('dbg_stab_progress');
+                if (pEl) {
+                    if (typeof __stab_iterations_final === 'number' &&
+                        typeof __stab_total_final      === 'number' &&
+                        __stab_total_final > 0) {
+
+                        const pct = Math.round(__stab_iterations_final / __stab_total_final * 10000) / 100;
+                        pEl.textContent = `稳定进度: 迭代: ${__stab_iterations_final}/${__stab_total_final}  进度: ${pct}%`;
+                    } else if (typeof __stab_iterations_final === 'number') {
+                        pEl.textContent = `稳定进度: 迭代: ${__stab_iterations_final} (总步数未知)`;
+                    } else {
+                        pEl.textContent = `稳定进度: 完成 (总步数未知)`;
+                    }
+                }
+
             } catch (e) {}
 
-
-            //----------------------------------------------------------------
-            // 最重要：稳定后立即关闭物理 + 停止模拟（阻止发散、阻止“第二轮”）
-            //----------------------------------------------------------------
+            // —— 你原先的：关闭物理 & 停止模拟 —— 
             try {
                 network.setOptions({
                     physics: {
@@ -1666,16 +1724,18 @@ window.__DEBUG = {"debug_cfg": %s};
                         stabilization: { enabled: false }
                     }
                 });
-
                 if (typeof network.stopSimulation === 'function') {
                     network.stopSimulation();
                 }
             } catch (e) {}
 
+            __refreshHUD();
+        });
 
-            //----------------------------------------------------------------
-            // 最后更新 HUD
-            //----------------------------------------------------------------
+        //====================================================================
+        // 6. stabilized（无须关物理，只作为兜底更新 HUD）
+        //====================================================================
+        network.on('stabilized', () => {
             __refreshHUD();
         });
 
@@ -1687,37 +1747,6 @@ window.__DEBUG = {"debug_cfg": %s};
             __refreshHUD();
         });
 
-
-        // 如果开启调试，监听 stabilizationProgress 并在 HUD 中显示进度信息
-        try {
-            const _dbg = (window.__DEBUG && window.__DEBUG.debug_cfg) ? window.__DEBUG.debug_cfg : null;
-            if (_dbg && _dbg.enable) {
-                try {
-                    network.on('stabilizationProgress', function(params){
-                        try {
-                            const el = document.getElementById('dbg_stab_progress');
-                            if (!el) return;
-
-                            const iter  = (params && (params.iterations ?? params.iteration)) ?? null;
-                            const total = (params && params.total) ?? null;
-
-                            let s;
-
-                            if (iter != null && total != null && total > 0) {
-                                const pct = Math.round(iter / total * 10000) / 100;  // 两位小数
-                                s = `迭代: ${iter}/${total}  进度: ${pct}%`;
-                            } else if (iter != null) {
-                                s = `迭代: ${iter} (进度未知)`;
-                            } else {
-                                s = `迭代: ? (进度未知)`;
-                            }
-
-                            el.textContent = '稳定进度: ' + s;
-                        } catch(e){}
-                    });
-                } catch(e){}
-            }
-        } catch(e){}
     } catch(e){}
 
         // 已移除早期的延迟轮询校准逻辑；现在依赖 fit / stabilized / zoom 事件即时更新缩放与高亮。
@@ -1866,40 +1895,58 @@ window.__DEBUG = {"debug_cfg": %s};
 });
 
 /***************************************************************************
- * SIMPLE FPS METER
+ * SIMPLE FPS METER  —— 仅在 debug_cfg.enable = true 时启用
 ***************************************************************************/
 (function(){
-    let last = performance.now();
-    let frames = 0;
-    let fps = 0;
 
-    const div = document.createElement("div");
-    div.style.position = "fixed";
-    div.style.right = "10px";
-    div.style.bottom = "10px";
-    div.style.padding = "4px 6px";
-    div.style.background = "rgba(0,0,0,0.6)";
-    div.style.color = "#0f0";
-    div.style.fontSize = "12px";
-    div.style.zIndex = 99999;
-    div.style.borderRadius = "4px";
-    div.textContent = "FPS: --";
-    document.body.appendChild(div);
+    function startFPSMeter(){
+        let last   = performance.now();
+        let frames = 0;
+        let fps    = 0;
 
-    function loop(){
-        const now = performance.now();
-        frames++;
+        const div = document.createElement("div");
+        div.style.position      = "fixed";
+        div.style.right         = "10px";
+        div.style.bottom        = "10px";
+        div.style.padding       = "4px 6px";
+        div.style.background    = "rgba(0,0,0,0.6)";
+        div.style.color         = "#0f0";
+        div.style.fontSize      = "12px";
+        div.style.zIndex        = 99999;
+        div.style.borderRadius  = "4px";
+        div.textContent         = "FPS: --";
+        document.body.appendChild(div);
 
-        // 每 250ms 更新一次显示（不会影响性能）
-        if (now - last >= 250){
-            fps = frames * 1000 / (now - last);
-            frames = 0;
-            last = now;
-            div.textContent = "FPS: " + fps.toFixed(1);
+        function loop(){
+            const now = performance.now();
+            frames++;
+
+            // 每 250ms 更新一次显示（不会影响性能）
+            if (now - last >= 250){
+                fps = frames * 1000 / (now - last);
+                frames = 0;
+                last   = now;
+                div.textContent = "FPS: " + fps.toFixed(1);
+            }
+            requestAnimationFrame(loop);
         }
         requestAnimationFrame(loop);
     }
-    requestAnimationFrame(loop);
+
+    // 等 DOM Ready，再根据 debug_cfg.enable 决定是否启动
+    __moOnReady(function(){
+        try {
+            const cfg = (window.__DEBUG && window.__DEBUG.debug_cfg)
+                ? window.__DEBUG.debug_cfg
+                : null;
+
+            // 和 Debug 菜单用同一个开关：
+            if (cfg && cfg.enable) {
+                startFPSMeter();
+            }
+        } catch(e){}
+    });
+
 })();
 
 })(); // IIFE end
