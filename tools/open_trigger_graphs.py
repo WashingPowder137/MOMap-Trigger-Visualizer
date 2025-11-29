@@ -39,7 +39,7 @@ if not MAPS_DIR.exists():
 
 HTTP_PORT = 8999
 
-TOOL_VERSION = '1.4.0'
+TOOL_VERSION = '1.4.1'
 
 
 def find_graphs():

@@ -30,7 +30,7 @@ from pathlib import Path
 # Repository root (two levels up from tools/ file)
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-TOOL_VERSION = "1.4.0"
+TOOL_VERSION = "1.4.1"
 
 # In-memory generation log collector. Messages appended here will be
 # written into the map's *_report.json under `generation_log` when done.
