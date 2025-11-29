@@ -18,6 +18,20 @@ This is a simple, cross-platform helper intended for local use.
 import os, sys, subprocess, webbrowser, time, threading
 from pathlib import Path
 
+# --- simple ANSI colors (work in most modern terminals, including PowerShell) ---
+RESET = "\033[0m"
+FG_GREEN = "\033[92m"
+FG_YELLOW = "\033[93m"
+FG_RED = "\033[91m"
+FG_CYAN = "\033[96m"
+FG_MAGENTA = "\033[95m"
+
+# --- colored print helpers ---
+def cyan_msg(msg):      print(FG_CYAN   + msg + RESET)   # for info
+def green_msg(msg):     print(FG_GREEN  + msg + RESET)   # for success
+def yellow_msg(msg):    print(FG_YELLOW + msg + RESET)   # for warn
+def red_msg(msg):       print(FG_RED    + msg + RESET)   # for error
+
 ROOT = Path(__file__).resolve().parents[1]
 MAPS_DIR = ROOT / 'data' / 'maps'
 if not MAPS_DIR.exists():
@@ -70,9 +84,9 @@ def find_graphs():
 
 def list_maps():
     maps = find_graphs()
-    print(f"\nCurrent version of the tool: v{TOOL_VERSION}")
+    print(f"\nCurrent version of the tool: {FG_CYAN}v{TOOL_VERSION}{RESET}")
     if not maps:
-        print('No generated trigger_graph HTML found under', MAPS_DIR)
+        yellow_msg('No generated trigger_graph HTML found under ' + str(MAPS_DIR))
         return maps
 
     print('\nFound trigger graphs:')
@@ -94,7 +108,7 @@ def list_maps():
             complete_status = 'ALL_MISSING'
 
         # 2) 版本
-        version_status = 'UNKNOWN_VERSION'
+        version_status = 'UNKNOWN'
         dbg_path = e.get('debug_json')
         if dbg_path and Path(dbg_path).exists():
             try:
@@ -110,7 +124,7 @@ def list_maps():
                     else:
                         version_status = f'v{file_ver}'
             except Exception:
-                version_status = 'UNKNOWN_VERSION'
+                version_status = 'UNKNOWN'
 
         # 3) 缓存状态
         mapname = e['map']
@@ -118,7 +132,32 @@ def list_maps():
         cache_status = _cache_status(map_dir, mapname)
 
         name = e['html'].name if e['html'] else '<no html>'
-        print(f"[{i}] {e['map']}: {name} ({complete_status}) ({version_status}) ({cache_status})")
+
+        # 状态上个色，例子：
+        if complete_status == 'COMPLETE':
+            complete_str = FG_GREEN + complete_status + RESET
+        else:
+            complete_str = FG_YELLOW + complete_status + RESET
+
+        if 'OUTDATED' in version_status:
+            version_str = FG_RED + version_status + RESET
+        elif 'NEWER' in version_status:
+            version_str = FG_CYAN + version_status + RESET
+        elif version_status.startswith('v'):
+            version_str = FG_GREEN + version_status + RESET
+        else:
+            version_str = version_status
+
+        if cache_status == 'CACHED':
+            cache_str = FG_GREEN + cache_status + RESET
+        elif cache_status == 'CACHE_OUTDATED':
+            cache_str = FG_YELLOW + cache_status + RESET
+        else:  # NOT_CACHED
+            cache_str = FG_RED + cache_status + RESET
+
+        print(f"[{FG_CYAN}{i}{RESET}] {FG_MAGENTA}{e['map']}{RESET}: {name} "
+            f"({complete_str}) ({version_str}) ({cache_str})")
+
 
     return maps
 
@@ -145,10 +184,16 @@ def start_http_server(root, port=HTTP_PORT):
     if not server_script.exists():
         # 兜底：如果脚本不存在，仍然用简单 http.server
         cmd = [sys.executable, '-m', 'http.server', str(port)]
-        print(f"Starting simple HTTP server at http://localhost:{port}/ (serving {root}) [no layout autosave]")
+        print(
+            f"{FG_CYAN}Starting simple HTTP server at http://localhost:{port}/ "
+            f"(serving {FG_MAGENTA}{root}{FG_CYAN}) [no layout autosave]{RESET}"
+        )    
     else:
         cmd = [sys.executable, str(server_script), str(port)]
-        print(f"Starting Trigger HTTP server at http://localhost:{port}/ (serving {root})")
+        print(
+            f"{FG_CYAN}Starting Trigger HTTP server at {FG_CYAN}http://localhost:{port}/ "
+            f"(serving {FG_MAGENTA}{root}{FG_CYAN}){RESET}"
+        )
 
     return subprocess.Popen(
         cmd,
@@ -174,7 +219,7 @@ def open_graph_entry(entry):
     html = entry['html']
     rel = html.relative_to(ROOT)
     url = f'http://localhost:{HTTP_PORT}/{rel.as_posix()}'
-    print('Opening', url)
+    print(f"{FG_CYAN}Opening {FG_MAGENTA}{url}{FG_CYAN}...{RESET}")
     webbrowser.open(url)
 
 def _find_cache_files(map_dir: Path, mapname: str):
@@ -257,7 +302,8 @@ def _spawn_background_map_parser(map_name: str, map_dir: Path):
     """
     mapfile = find_mapfile_for(map_name)
     if not mapfile:
-        print(f"⚠️ No corresponding .map file found; cannot auto-repair JSON: {map_name}")
+        print(f"{FG_RED}No corresponding .map file found; cannot auto-repair JSON: "
+              f"{FG_MAGENTA}{map_name}{RESET}")
         return None, None
 
     candidates = [Path(__file__).parent / 'map_parser.py', Path('map_parser.py'), Path('tools') / 'map_parser.py']
@@ -267,7 +313,7 @@ def _spawn_background_map_parser(map_name: str, map_dir: Path):
             parser_py = c
             break
     if not parser_py:
-        print('⚠️ Could not locate map_parser.py; cannot auto-repair JSON (tried: ' + ', '.join(str(c) for c in candidates) + ')')
+        yellow_msg("Could not locate map_parser.py; cannot auto-repair JSON (tried: " + ', '.join(str(c) for c in candidates) + ")")
         return None, None
 
     import subprocess, sys as _sys
@@ -280,7 +326,7 @@ def _spawn_background_map_parser(map_name: str, map_dir: Path):
         # start subprocess but send its stdout/stderr to DEVNULL so we don't interleave logs
         proc = subprocess.Popen([_sys.executable, str(parser_py), str(mapfile)], cwd=str(repo_root), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception as e:
-        print('❌ Failed to start background repair:', e)
+        red_msg(f"Failed to start background repair: {e}")
         return None, None
 
     done = threading.Event()
@@ -329,12 +375,11 @@ def _run_map_parser_sync(map_path: Path, show_progress: bool = True) -> bool:
             break
     if not parser_py:
         if show_progress:
-            print('⚠️ Could not locate map_parser.py; skip re-parsing.')
+            yellow_msg("Could not locate map_parser.py; skip re-parsing.")
         return False
 
     if show_progress:
-        print(f"Re-parsing .map with {parser_py} ...")
-
+        print(f"{FG_CYAN}Re-parsing .map with {FG_MAGENTA}{parser_py}{FG_CYAN} ...{RESET}")
     cmd = [sys.executable, str(parser_py), str(map_path)]
     try:
         with subprocess.Popen(
@@ -347,19 +392,19 @@ def _run_map_parser_sync(map_path: Path, show_progress: bool = True) -> bool:
                 p.wait(timeout=30)
             except subprocess.TimeoutExpired:
                 if show_progress:
-                    print("Map parsing still running after 30s, aborting. This is most likely bugged.")
+                    yellow_msg("Map parsing still running after 30s, aborting. This is most likely bugged.")
                 return False
             if p.returncode != 0:
                 if show_progress:
-                    print(f"Map parsing failed (exit {p.returncode}).")
+                    red_msg(f"Map parsing failed (exit {p.returncode}).")
                 return False
     except Exception as e:
         if show_progress:
-            print('Failed to run map_parser:', e)
+            red_msg(f"Failed to run map_parser: {e}")
         return False
 
     if show_progress:
-        print('Map parsing finished.')
+        cyan_msg('Map parsing finished.')
     return True
 
 
@@ -407,13 +452,14 @@ def generate_from_map(map_path, auto_open=False, show_progress: bool = True):
     # 1) 先解析 .map -> 源 JSON
     if not _run_map_parser_sync(map_path, show_progress=show_progress):
         if show_progress:
-            print('Skip graph generation due to map parsing failure/timeout.')
+            yellow_msg('Skip graph generation due to map parsing failure/timeout.')
         return False
 
     # 2) 删除旧的布局缓存
     cache_files = _find_cache_files(map_dir, mapname)
     if cache_files and show_progress:
-        print('Clearing layout cache files:', ', '.join(p.name for p in cache_files))
+        files_str = ", ".join(f"{FG_MAGENTA}{p.name}{RESET}" for p in cache_files)
+        print(f"{FG_CYAN}Clearing layout cache files: {files_str}{RESET}")
     for cf in cache_files:
         try:
             cf.unlink()
@@ -421,11 +467,11 @@ def generate_from_map(map_path, auto_open=False, show_progress: bool = True):
             pass
         except Exception as e:
             if show_progress:
-                print('  Failed to remove', cf, ':', e)
+                red_msg(f"  Failed to remove {cf}: {e}")
 
     # 3) 调用 visualize_triggers 生成新图
     if show_progress:
-        print('Generating graph for', map_path)
+        print(f"{FG_CYAN}Generating graph for {FG_MAGENTA}{map_path}{FG_CYAN}...{RESET}")
 
     vt = ROOT / 'tools' / 'visualize_triggers.py'
     if vt.exists():
@@ -439,7 +485,7 @@ def generate_from_map(map_path, auto_open=False, show_progress: bool = True):
     if show_progress:
         spinner_thread = threading.Thread(
             target=_spinner,
-            args=(f"Generating {map_path.name}...", stop_event),
+            args=(f"{FG_CYAN}Generating {FG_MAGENTA}{map_path.name}{FG_CYAN}...{RESET}", stop_event),
             daemon=True
         )
         spinner_thread.start()
@@ -461,8 +507,8 @@ def generate_from_map(map_path, auto_open=False, show_progress: bool = True):
                 if spinner_thread:
                     spinner_thread.join()
                 if show_progress:
-                    print("Generation still running after 30s, aborting. This is most likely to have bugged.")
-                    print(f"Please check the generation report (if any): {report_path}")
+                    yellow_msg("Generation still running after 30s, aborting. This is most likely to have bugged.")
+                    print(f"{FG_YELLOW}Please check the generation report (if any): {FG_MAGENTA}{report_path}{RESET}")
                 return False
 
             if p.returncode != 0:
@@ -472,38 +518,38 @@ def generate_from_map(map_path, auto_open=False, show_progress: bool = True):
         stop_event.set()
         if spinner_thread:
             spinner_thread.join()
-        print(f'Generation failed (exit {getattr(e, "returncode", "?")}).')
+        red_msg(f'Generation failed (exit {getattr(e, "returncode", "?")}).')
         print('You can:')
-        print("  (a) Open generation report")
-        print("  (b) Return to main menu")
-        choice = input('Your choice (a/b): ').strip().lower()
+        print(f"  Enter {FG_CYAN}'a'{RESET} to open generation report")
+        print(f"  Enter {FG_CYAN}'b'{RESET} to return to main menu")
+        choice = input('Your choice: ').strip().lower()
         if choice == 'a':
             try:
                 webbrowser.open(report_path.as_uri())
             except Exception:
-                print(f'Cannot open {report_path}; please inspect it manually.')
+                print(f'{FG_RED}Cannot open {FG_MAGENTA}{report_path}{FG_RED}; please inspect it manually.{RESET}')
         return False
     except Exception as e:
         stop_event.set()
         if spinner_thread:
             spinner_thread.join()
-        print('Generation failed:', e)
+        red_msg(f'Generation failed: {e}')
         print('You can:')
-        print("  (a) Open generation report")
-        print("  (b) Return to main menu")
-        choice = input('Your choice (a/b): ').strip().lower()
+        print(f"  Enter {FG_CYAN}'a'{RESET} to open generation report")
+        print(f"  Enter {FG_CYAN}'b'{RESET} to return to main menu")
+        choice = input('Your choice: ').strip().lower()
         if choice == 'a':
             try:
                 webbrowser.open(report_path.as_uri())
             except Exception:
-                print(f'Cannot open {report_path}; please inspect it manually.')
+                print(f'{FG_RED}Cannot open {FG_MAGENTA}{report_path}{FG_RED}; please inspect it manually.{RESET}')
         return False
 
     stop_event.set()
     if spinner_thread:
         spinner_thread.join()
     if show_progress:
-        print(f'Generation finished for {map_path.name}')
+        green_msg(f"Generation finished for {map_path.name}")
     return True
 
 
@@ -513,39 +559,39 @@ def main():
         while True:
             maps = list_maps()
             print('\nOptions:')
-            print('  Enter index number to open that graph')
-            print("  Enter 'g' to list .map files and (re)generate a graph from a .map")
-            print("  Enter 'q' to quit")
+            print(f'  Enter {FG_CYAN}index number{RESET} to open that graph')
+            print(f"  Enter {FG_CYAN}'g'{RESET} to list .map files and (re)generate graphs")
+            print(f"  Enter {FG_CYAN}'q'{RESET} to quit")
             choice = input('\nYour choice: ').strip()
             if choice.lower() == 'q':
                 break
             if choice.lower() == 'g':
                 mfiles = find_map_files()
                 if not mfiles:
-                    print('No .map files found in project root.')
+                    yellow_msg('No .map files found in project root.')
                     continue
                 print('\nFound .map files:')
                 for i, m in enumerate(mfiles):
-                    print(f'  [{i}] {m.name}')
-                print("  Enter index to generate, 'a' to generate ALL, or blank to cancel")
+                    print(f'  [{FG_CYAN}{i}{RESET}] {FG_MAGENTA}{m.name}{RESET}')
+                print(f"  Enter {FG_CYAN}index{RESET} to generate, {FG_CYAN}'a'{RESET} to generate ALL, or {FG_CYAN}leave blank{RESET} to cancel")
                 idx = input('Your choice: ').strip()
                 if idx == '':
                     continue
                 if idx.lower() == 'a':
-                    print('Generating all .map files...')
+                    cyan_msg("Generating all .map files...")
                     for m in mfiles:
                         try:
                             generate_from_map(m)
                         except Exception as ex:
-                            print('Failed to generate for', m, ex)
-                    print('All generation attempts finished. Rescanning...')
+                            red_msg(f"Failed to generate for {m}: {ex}")
+                    cyan_msg("All generation attempts finished. Rescanning...")
                     time.sleep(0.3)
                     continue
                 try:
                     mi = int(idx)
                     if 0 <= mi < len(mfiles):
                         ok = generate_from_map(mfiles[mi])
-                        print('Generation done. Rescanning...')
+                        cyan_msg("Generation done. Rescanning...")
                         time.sleep(0.3)
                         if ok:
                             # rescan and attempt to open the newly generated graph (single-file generation only)
@@ -564,19 +610,19 @@ def main():
                                 # after opening, continue outer loop (list will refresh on next iteration)
                                 continue
                             else:
-                                print('Generated output incomplete or not found; not auto-opening.')
+                                yellow_msg("Generated output incomplete or not found; not auto-opening.")
                                 continue
                 except Exception as e:
-                    print('Invalid selection', e)
+                    red_msg(f"Invalid selection: {e}")
                     continue
             # otherwise numeric index
             try:
                 ix = int(choice)
             except Exception:
-                print('Invalid input')
+                red_msg("Invalid input")
                 continue
             if ix < 0 or ix >= len(maps):
-                print('Index out of range')
+                red_msg("Index out of range")
                 continue
             entry = maps[ix]
             # check completeness
@@ -584,23 +630,23 @@ def main():
             has_node = bool(entry.get('has_node'))
             has_debug = bool(entry.get('has_debug'))
             if not (has_html and has_node and has_debug):
-                print(f"Selected entry '{entry['map']}' is incomplete.")
+                yellow_msg(f"Selected entry '{entry['map']}' is incomplete.")
                 # try to find a .map in project root to generate from
                 mapfile = find_mapfile_for(entry['map'])
                 if mapfile:
-                    print(f"Found source .map '{mapfile.name}' — attempting to generate trigger_graph...")
+                    cyan_msg(f"Found source .map '{mapfile.name}' — attempting to generate trigger_graph...")
                     try:
                         generate_from_map(mapfile)
                     except subprocess.CalledProcessError as ex:
-                        print('Generation failed (subprocess error):', ex)
-                        print('Will not open incomplete trigger_graph.')
+                        red_msg(f"Generation failed (subprocess error): {ex}")
+                        red_msg("Will not open incomplete trigger_graph.")
                         continue
                     except Exception as ex:
-                        print('Generation failed:', ex)
-                        print('Will not open incomplete trigger_graph.')
+                        red_msg(f"Generation failed: {ex}")
+                        red_msg("Will not open incomplete trigger_graph.")
                         continue
                     # rescan entries to pick up new/generated files
-                    print('Generation finished — rescanning...')
+                    cyan_msg("Generation finished — rescanning...")
                     time.sleep(0.25)
                     maps = find_graphs()
                     # find matching entry again
@@ -610,14 +656,14 @@ def main():
                             found = e
                             break
                     if not found:
-                        print('Generation seemed to run but no output found. Not opening.')
+                        yellow_msg("Generation seemed to run but no output found. Not opening.")
                         continue
                     entry = found
                     has_html = bool(entry.get('has_html'))
                     has_node = bool(entry.get('has_node'))
                     has_debug = bool(entry.get('has_debug'))
                     if not (has_html and has_node and has_debug):
-                        print('After generation the entry is still incomplete. Not opening.')
+                        yellow_msg("After generation the entry is still incomplete. Not opening.")
                         continue
                 else:
                     # print explicit missing files and helpful suggestions
@@ -630,10 +676,13 @@ def main():
                     if not has_debug:
                         expected_dbg = f"{entry['map']}_debug.json"
                         miss.append(f"debug JSON ({expected_dbg})")
-                    print('Missing files for this entry: ' + ', '.join(miss))
-                    print("No corresponding .map source found in repository root — cannot auto-generate.")
+                    red_msg("Missing files for this entry: " + ', '.join(miss))
+                    red_msg("No corresponding .map source found in repository root — cannot auto-generate.")
                     print("Suggestions:")
-                    print("  - Place the missing sidecar JSON files next to the HTML (names above).\n  - Or run this script and press 'g' to generate from a .map if you have one.\n  - Or run: python visualize_triggers.py --map <mapname> to generate manually.")
+                    print(
+                        f"  - Place the {FG_CYAN}missing sidecar JSON files{RESET} next to the HTML (names above).\n"  
+                        f"  - Or run this script and press {FG_CYAN}'g'{RESET} to generate from a .map if you have one.\n"
+                        f"  - Or run: {FG_CYAN}python visualize_triggers.py --map <mapname>{RESET} to generate manually.")
                     continue
 
             mapname = entry['map']
@@ -648,8 +697,11 @@ def main():
             # 如果源 JSON 早于 .map，给出提醒
             try:
                 if _source_outdated(map_dir, mapname):
-                    print(f"⚠️  Note: source JSONs for '{mapname}' seem older than the .map file.")
-                    print("   The graph may not reflect latest changes. Consider regenerating via 'g'.\n")
+                    print(f"{FG_YELLOW}Note: source JSONs for "
+                          f"{FG_MAGENTA}'{mapname}' "
+                          f"{FG_YELLOW}seem older than the .map file.{RESET}")
+                    print(f"{FG_YELLOW}The graph may not reflect latest changes. Consider regenerating via "
+                          f"{FG_CYAN}'g'{FG_YELLOW}.{RESET}\n")
             except Exception:
                 pass
 
@@ -662,7 +714,8 @@ def main():
                            for k in ("triggers", "actions", "events", "locals"))
 
             if not _has_source_jsons(map_dir, mapname):
-                print(f"⚠️ Note: source JSONs (triggers/actions/events/locals) are missing. Repair started in background for: {mapname} (generation info will be written to {mapname}_report.json)")
+                print(f"{FG_YELLOW}Note: source JSONs (triggers/actions/events/locals) are missing. Repair started in background for: "
+                      f"{FG_MAGENTA}{mapname}{FG_YELLOW} (generation info will be written to {FG_MAGENTA}{mapname}_report.json{FG_YELLOW}){RESET}")
                 done_event, result = _spawn_background_map_parser(mapname, map_dir)
             else:
                 done_event = None
@@ -675,8 +728,8 @@ def main():
                     dbg = json.load(f)
                 file_ver = dbg.get('tool_version')
                 if isinstance(file_ver, str) and compare_version(file_ver, TOOL_VERSION) < 0:
-                    print(f"⚠️  Note: this trigger graph was generated using an older version ({file_ver}).")
-                    print("   It is recommended to re-generate using the latest visualization tool.\n")
+                    print(f"{FG_YELLOW}Note: this trigger graph was generated using an older version {FG_CYAN}({file_ver}).{RESET}")
+                    print(f"{FG_YELLOW}It is recommended to re-generate using the latest visualization tool.{RESET}\n")
             except Exception:
                 pass
 
@@ -686,18 +739,18 @@ def main():
             # If we spawned a background repair, wait for it to finish now and report a concise summary.
             if done_event is not None:
                 # wait with a small dot-progress to avoid blocking print interleaving
-                print('ℹ️ Waiting for background repair to complete...', end='', flush=True)
+                print(f' {FG_CYAN}Waiting for background repair to complete...{RESET}', end='', flush=True)
                 while not done_event.wait(timeout=0.5):
-                    print('.', end='', flush=True)
-                print('\nRepair complete.', end=' ')
+                    print(f'{FG_CYAN}.{RESET}', end='', flush=True)
+                print(f'\n{FG_GREEN}Repair complete.{RESET}', end=' ')
                 try:
                     # 简洁单行提示，用户可自行查看目录或 report
-                    print(f'Repair complete - please check: {map_dir}')
+                    print(f'{FG_GREEN}Repair complete - please check: {FG_MAGENTA}{map_dir}{RESET}')
                 except Exception:
-                    print('Repair complete - please check the corresponding directory for details.')
+                    green_msg("Repair complete - please check the corresponding directory for details.")
     finally:
         if server:
-            print('Stopping HTTP server...')
+            cyan_msg('Stopping HTTP server...')
             server.terminate()
 
 

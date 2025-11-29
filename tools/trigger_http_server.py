@@ -20,6 +20,12 @@ class TriggerHandler(http.server.SimpleHTTPRequestHandler):
         path = path.split('?',1)[0].split('#',1)[0]
         path = os.path.normpath(path.lstrip('/'))
         return str(base / path)
+    
+    def end_headers(self):
+        # 禁用所有静态资源缓存（HTML + JSON + JS + CSS）
+        self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+        self.send_header('Pragma', 'no-cache')
+        super().end_headers()
 
     def do_POST(self):
         if self.path != '/__save_layout':

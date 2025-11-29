@@ -896,7 +896,7 @@ window.__DEBUG = {"debug_cfg": %s};
                     // 方案B：轻微圆角
                     e.smooth = {
                         enabled: true,
-                        type: 'continuous',
+                        type: 'cubicBezier',
                         roundness: 0.10   // 越小越接近直线
                     };
                 });
@@ -908,7 +908,7 @@ window.__DEBUG = {"debug_cfg": %s};
                     edges: { 
                         smooth: {
                             enabled: true,
-                            type: 'continuous',
+                            type: 'cubicBezier',
                             roundness: 0.10   // 越小越接近直线
                         } 
                     }
@@ -1509,6 +1509,10 @@ window.__DEBUG = {"debug_cfg": %s};
 
       const nodesAll = network.body.data.nodes.get();
       nodesAll.forEach(n => {
+
+        if ('x' in n) delete n.x;
+        if ('y' in n) delete n.y;
+
         if (n.origSize == null) n.origSize = n.size;   // 确保一定会写入一次基线尺寸
                 if (n.origFontSize == null) n.origFontSize = (n.font && n.font.size) || 16;
         n.opacity = 1.0;
@@ -1592,7 +1596,7 @@ window.__DEBUG = {"debug_cfg": %s};
     const baseOpacity = __baseEdgeOpacityForScale(scale);
     const LC = __getLabelColors();
     const SC = __getStrokeColors();
-        const showLabel = (scale >= LABEL_HIDE_BELOW);
+    const showLabel = (scale >= LABEL_HIDE_BELOW);
 
     // 先拿到全部边，算出“出邻居 / 入邻居”
     const edgesAll = network.body.data.edges.get();
@@ -1639,22 +1643,26 @@ window.__DEBUG = {"debug_cfg": %s};
     // 节点：选中节点最亮且稍大，邻居正常，其他淡化
     const nodesAll = network.body.data.nodes.get();
     nodesAll.forEach(n => {
+
+      if ('x' in n) delete n.x;
+      if ('y' in n) delete n.y;
+      
       const isSelf = (n.id === selectedId);
       const isNeighbor = neighborSet.has(n.id);
-            if (isSelf) {
-                n.opacity = 1.0;
-                const base = n.origSize || n.size || 14;
-                n.size = base * 1.35;
-                n.font = Object.assign({}, n.font, { size: showLabel ? (n.origFontSize||16) : 0, color: LC.normal, strokeWidth: 5, strokeColor: SC.normal });
-            } else if (isNeighbor) {
-                n.opacity = 1.0;
-                n.size = n.origSize || n.size;
-                n.font = Object.assign({}, n.font, { size: showLabel ? (n.origFontSize||16) : 0, color: LC.normal, strokeWidth: 5, strokeColor: SC.normal });
-            } else {
-                n.opacity = 0.12;
-                n.size = n.origSize || n.size;
-                n.font = Object.assign({}, n.font, { size: showLabel ? (n.origFontSize||16) : 0, color: LC.faded, strokeWidth: 5, strokeColor: SC.faded });
-            }
+        if (isSelf) {
+            n.opacity = 1.0;
+            const base = n.origSize || n.size || 14;
+            n.size = base * 1.35;
+            n.font = Object.assign({}, n.font, { size: showLabel ? (n.origFontSize||16) : 0, color: LC.normal, strokeWidth: 5, strokeColor: SC.normal });
+        } else if (isNeighbor) {
+            n.opacity = 1.0;
+            n.size = n.origSize || n.size;
+            n.font = Object.assign({}, n.font, { size: showLabel ? (n.origFontSize||16) : 0, color: LC.normal, strokeWidth: 5, strokeColor: SC.normal });
+        } else {
+            n.opacity = 0.12;
+            n.size = n.origSize || n.size;
+            n.font = Object.assign({}, n.font, { size: showLabel ? (n.origFontSize||16) : 0, color: LC.faded, strokeWidth: 5, strokeColor: SC.faded });
+        }
     });
     network.body.data.nodes.update(nodesAll);
 
@@ -1686,7 +1694,7 @@ window.__DEBUG = {"debug_cfg": %s};
     const baseOpacity = __baseEdgeOpacityForScale(scale);
     const LC = __getLabelColors();
     const SC = __getStrokeColors();
-        const showLabel = (scale >= LABEL_HIDE_BELOW);
+    const showLabel = (scale >= LABEL_HIDE_BELOW);
 
     const e = network.body.data.edges.get(edgeId);
     if (!e) return;
@@ -1695,17 +1703,21 @@ window.__DEBUG = {"debug_cfg": %s};
 
     // 节点：仅端点不淡化（选中端点略放大），其他淡化
     const nodesAll = network.body.data.nodes.get();
-        nodesAll.forEach(n => {
+    nodesAll.forEach(n => {
+
+      if ('x' in n) delete n.x;
+      if ('y' in n) delete n.y;
+
       if (n.origSize == null) n.origSize = n.size;
       const isEndpoint = (n.id === a || n.id === b);
-            n.opacity = isEndpoint ? 1.0 : 0.12;
-            n.size    = isEndpoint ? (n.origSize||n.size)*1.25 : (n.origSize||n.size);
-            n.font    = Object.assign({}, n.font, {
-                size:         showLabel ? (n.origFontSize||16) : 0,
-                color:       isEndpoint ? LC.normal : LC.faded,
-                strokeWidth: isEndpoint ? 6 : 4,
-                strokeColor: isEndpoint ? SC.normal : SC.faded
-            });
+      n.opacity = isEndpoint ? 1.0 : 0.12;
+      n.size    = isEndpoint ? (n.origSize||n.size)*1.25 : (n.origSize||n.size);
+      n.font    = Object.assign({}, n.font, {
+        size:         showLabel ? (n.origFontSize||16) : 0,
+        color:       isEndpoint ? LC.normal : LC.faded,
+        strokeWidth: isEndpoint ? 6 : 4,
+        strokeColor: isEndpoint ? SC.normal : SC.faded
+      });
     });
     network.body.data.nodes.update(nodesAll);
 
@@ -2056,15 +2068,36 @@ window.__DEBUG = {"debug_cfg": %s};
     });
 
     network.on('click', (params) => {
-      if (!params.nodes.length && !params.edges.length) { 
-        __LAST_SELECTED_ID = null;
+    // 1) 点击到节点：无论是否已经被选中，都刷新高亮和 tooltip
+    if (params.nodes && params.nodes.length) {
+        const id = params.nodes[0];
+        if (id !== DUMMY) {
+        __LAST_SELECTED_ID   = id;
         __LAST_SELECTED_EDGE = null;
+        __highlightSelection(id, params.pointer);
         __stopFollow();
-        __resetDim(); __hideTooltip();
-        // 取消选中时，尝试选中假结点，使 partial redraw 继续生效
-        // 和 deselect 事件里重复，但保险起见保留
-        setTimeout(()=>__forceDummySelection(), 0);
-      }
+        __alignTooltipByPolicy('select');
+        }
+        return;
+    }
+
+    // 2) 点击到边：可以选择是否在这里也刷新一次（可选）
+    if (params.edges && params.edges.length) {
+        const eid = params.edges[0];
+        __LAST_SELECTED_ID   = null;
+        __LAST_SELECTED_EDGE = eid;
+        __highlightEdgeSelection(eid);
+        __stopFollow();
+        __alignTooltipByPolicy('select');
+        return;
+    }
+
+    // 3) 点击空白：清空选中 & 复位样式
+    __LAST_SELECTED_ID = null;
+    __LAST_SELECTED_EDGE = null;
+    __stopFollow();
+    __resetDim(); __hideTooltip();
+    setTimeout(()=>__forceDummySelection(), 0);
     });
 
     network.on('zoom', () => {
