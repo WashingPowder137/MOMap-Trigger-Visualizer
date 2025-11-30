@@ -39,7 +39,7 @@ if not MAPS_DIR.exists():
 
 HTTP_PORT = 8999
 
-TOOL_VERSION = '1.4.1'
+TOOL_VERSION = '1.4.2'
 
 
 def find_graphs():
@@ -185,13 +185,13 @@ def start_http_server(root, port=HTTP_PORT):
         # 兜底：如果脚本不存在，仍然用简单 http.server
         cmd = [sys.executable, '-m', 'http.server', str(port)]
         print(
-            f"{FG_CYAN}Starting simple HTTP server at http://localhost:{port}/ "
-            f"(serving {FG_MAGENTA}{root}{FG_CYAN}) [no layout autosave]{RESET}"
+            f"{FG_CYAN}Starting simple HTTP server at {FG_MAGENTA}http://localhost:{port}/ "
+            f"({FG_CYAN}serving {FG_MAGENTA}{root}{FG_CYAN}) [no layout autosave]{RESET}"
         )    
     else:
         cmd = [sys.executable, str(server_script), str(port)]
         print(
-            f"{FG_CYAN}Starting Trigger HTTP server at {FG_CYAN}http://localhost:{port}/ "
+            f"{FG_CYAN}Starting Trigger HTTP server at {FG_MAGENTA}http://localhost:{port}/ "
             f"(serving {FG_MAGENTA}{root}{FG_CYAN}){RESET}"
         )
 
@@ -214,11 +214,19 @@ def _has_cache_files(map_dir: Path, mapname: str) -> bool:
     ]
     return any(p.exists() for p in candidates)
 
-def open_graph_entry(entry):
+def open_graph_entry(entry, skip_physics: bool = False):
+    """Open the given graph entry in browser.
+    If skip_physics=True, append ?skip_physics=1 so HTTP server can disable vis physics on load.
+    """
     # ensure files are in place
     html = entry['html']
     rel = html.relative_to(ROOT)
-    url = f'http://localhost:{HTTP_PORT}/{rel.as_posix()}'
+
+    if skip_physics:
+        url = f'http://localhost:{HTTP_PORT}/{rel.as_posix()}?skip_physics=1'
+    else:
+        url = f'http://localhost:{HTTP_PORT}/{rel.as_posix()}'
+        
     print(f"{FG_CYAN}Opening {FG_MAGENTA}{url}{FG_CYAN}...{RESET}")
     webbrowser.open(url)
 
@@ -549,7 +557,7 @@ def generate_from_map(map_path, auto_open=False, show_progress: bool = True):
     if spinner_thread:
         spinner_thread.join()
     if show_progress:
-        green_msg(f"Generation finished for {map_path.name}")
+        print(f"{FG_CYAN}Generation finished for {FG_MAGENTA}{map_path.name}{FG_CYAN}.{RESET}")
     return True
 
 
@@ -606,7 +614,7 @@ def main():
                                 if server is None:
                                     server = start_http_server(ROOT)
                                     time.sleep(0.3)
-                                open_graph_entry(found)
+                                open_graph_entry(found, skip_physics=False)
                                 # after opening, continue outer loop (list will refresh on next iteration)
                                 continue
                             else:
@@ -734,7 +742,21 @@ def main():
                 pass
 
             # finally open the graph
-            open_graph_entry(entry)
+            try:
+                cache_status = _cache_status(map_dir, mapname)
+            except Exception:
+                cache_status = 'NOT_CACHED'
+            
+            # 只在缓存状态为 CACHED 时跳过物理引擎，以提升加载速度
+            skip_physics = (cache_status == 'CACHED')
+
+            if skip_physics:
+                cyan_msg(
+                    f"Layout cache for {FG_MAGENTA}{mapname}{FG_CYAN} is up-to-date; "
+                    f"will skip physics simulation on load for faster rendering.{RESET}"
+                )
+
+            open_graph_entry(entry, skip_physics=skip_physics)
 
             # If we spawned a background repair, wait for it to finish now and report a concise summary.
             if done_event is not None:

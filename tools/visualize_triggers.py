@@ -30,7 +30,7 @@ from pathlib import Path
 # Repository root (two levels up from tools/ file)
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-TOOL_VERSION = "1.4.1"
+TOOL_VERSION = "1.4.2"
 
 # In-memory generation log collector. Messages appended here will be
 # written into the map's *_report.json under `generation_log` when done.
@@ -782,11 +782,36 @@ window.__DEBUG = {"debug_cfg": %s};
     function __updateLastScale(){ try { window.__VIS_LAST_SCALE = network.getScale(); } catch(e){} }
     function __getAccurateScale(){ try { return (window.__VIS_LAST_SCALE || network.getScale() || 1.0); } catch(e){ return 1.0; } }
 
-      // ====== 布局缓存：兼容判断 + 应用 ======
+    // 布局来源标记（'physics' / 'cache' / null）
+    window.__LAYOUT_SOURCE = window.__LAYOUT_SOURCE || null;
+
+    // ====== 布局缓存：兼容判断 + 应用 ======
     let __LAYOUT_APPLIED = false;
 
+        function __inferMapNameFromLocation(){
+        try {
+            const path = window.location.pathname || ''; // 如 /data/maps/aanes/aanes_trigger_graph.html
+            const parts = path.split('/').filter(Boolean);
+            if (!parts.length) return null;
+
+            const htmlName = parts[parts.length - 1];   // aanes_trigger_graph.html
+            const m = htmlName.match(/^(.+)_trigger_graph\.html$/);
+            if (m) return m[1];
+
+            // 回退：用上一级目录名
+            return parts.length >= 2 ? parts[parts.length - 2] : null;
+        } catch(e){
+            return null;
+        }
+    }
+
+    const __MAP_NAME_HINT = __inferMapNameFromLocation();
+
     function __isLayoutCompatible(layoutObj, dbg) {
-        if (!layoutObj || !dbg) return false;
+        if (!layoutObj) return false;
+
+        // 如果还没拿到 debug，就先相信同一目录的 layout
+        if (!dbg) return true;
 
         // 1) tool_version 不一致，直接当不兼容
         if (layoutObj.tool_version && dbg.tool_version &&
@@ -824,13 +849,15 @@ window.__DEBUG = {"debug_cfg": %s};
         }
 
         const dbg = window.__DEBUG;
-        if (!dbg || !dbg.map_name) {
-            // 还没加载到 debug.json，就等下一次
+        // 优先用 debug.map_name，拿不到时用 URL 推断
+        const mapName = (dbg && dbg.map_name) || __MAP_NAME_HINT;
+        if (!mapName) {
+            // 实在推不出 map 名，只能等下一次
             return;
         }
 
         // HTML 跟 layout.json 在同一目录，文件名是 "<map_name>_layout.json"
-        const layoutUrl = `${dbg.map_name}_layout.json`;
+        const layoutUrl = `${mapName}_layout.json`;
 
         fetch(layoutUrl).then(r => {
             if (!r.ok) throw new Error('status ' + r.status + ' @' + layoutUrl);
@@ -881,7 +908,7 @@ window.__DEBUG = {"debug_cfg": %s};
 
             nodesData.update(allNodes);
 
-            // 新增：缓存布局时，把边改成“直线（关掉 smooth）”
+            // 新增：缓存布局时，修改边的形状（两套方案）
             try {
                 const edgesData = network.body.data.edges;
                 const allEdges  = edgesData.get();
@@ -891,14 +918,14 @@ window.__DEBUG = {"debug_cfg": %s};
                     if (e.hasOwnProperty('smooth')) delete e.smooth;
 
                     // 方案A：完全直线
-                    // e.smooth = { enabled: false };
+                    e.smooth = { enabled: false };
 
                     // 方案B：轻微圆角
-                    e.smooth = {
-                        enabled: true,
-                        type: 'cubicBezier',
-                        roundness: 0.10   // 越小越接近直线
-                    };
+                    // e.smooth = {
+                    //    enabled: true,
+                    //    type: 'cubicBezier',
+                    //    roundness: 0.10   // 越小越接近直线
+                    // };
                 });
                 edgesData.update(allEdges);
             } catch(e){}
@@ -906,11 +933,12 @@ window.__DEBUG = {"debug_cfg": %s};
             try {
                 network.setOptions({
                     edges: { 
-                        smooth: {
-                            enabled: true,
-                            type: 'cubicBezier',
-                            roundness: 0.10   // 越小越接近直线
-                        } 
+                        // smooth: {
+                        //    enabled: true,
+                        //    type: 'cubicBezier',
+                        //    roundness: 0.10   // 越小越接近直线
+                        // } 
+                        smooth: { enabled: false }
                     }
                 });
             } catch(e){}
@@ -931,6 +959,30 @@ window.__DEBUG = {"debug_cfg": %s};
             try {
                 network.redraw();
             } catch(e){}
+
+            // ⭐ 标记布局来源为“缓存”
+            try {
+                window.__LAYOUT_SOURCE = 'cache';
+            } catch(e){}
+
+            // layout 应用完毕后，强制按照“当前缩放”刷新一遍基线样式
+            try {
+                if (typeof __updateLastScale === 'function') {
+                    __updateLastScale();                           // 把当前 scale 记入 __VIS_LAST_SCALE
+                }
+                if (typeof __resetDimThrottled === 'function') {
+                    __resetDimThrottled(true);                     // 强制刷新一次节点/边透明度 + label 显隐
+                }
+                if (typeof __showZoomHUD === 'function') {
+                    __showZoomHUD(__getAccurateScale());           // HUD 也顺便同步一下
+                }
+                if (typeof __alignTooltipByPolicy === 'function') {
+                    __alignTooltipByPolicy('zoom');                // 若已有选中对象，让 tooltip 顺带对齐一次（可选）
+                }
+            } catch (e) {
+                // 安全兜底，不让这里的报错影响加载
+                console.warn('[TriggerGraph] post-layout dim refresh failed:', e);
+            }
 
             window.__LAYOUT_APPLIED = true;
             console.log('[TriggerGraph] layout cache applied from', layoutUrl);
@@ -1212,9 +1264,25 @@ window.__DEBUG = {"debug_cfg": %s};
         const edgesLine = (typeof info.edge_count === 'number' ? info.edge_count : '(待)');
         const iterLine  = (typeof info.stab_iter === 'number' ? info.stab_iter : '(待)');
 
+        // === 布局来源标记：physics / cache / 未知 ===
+        const layoutSource = (function(){
+            try {
+                if (window.__LAYOUT_SOURCE === 'cache')   return '缓存';
+                if (window.__LAYOUT_SOURCE === 'physics') return '迭代';
+                return '未知';
+            } catch(e){
+                return '未知';
+            }
+        })();
+
+        const fromCache = (layoutSource === '缓存');
+
         // === 时间行：优先使用“最终耗时”，没有的话才看 start_time ===
         let timeLine;
-        if (Number.isFinite(__stab_duration_final) && __stab_duration_final > 0) {
+        if (fromCache) {
+            // 读取缓存布局时，不存在本地稳定迭代过程 → 显示“不适用”
+            timeLine = '稳定耗时: (不适用)';
+        } else if (Number.isFinite(__stab_duration_final) && __stab_duration_final > 0) {
             timeLine = `稳定耗时: ${(__stab_duration_final / 1000).toFixed(2)}s`;
         } else if (typeof __stab_start_time === 'number') {
             const now = (typeof performance !== 'undefined' && typeof performance.now === 'function')
@@ -1228,9 +1296,12 @@ window.__DEBUG = {"debug_cfg": %s};
 
         // === 进度行：同样只看缓存，不自己改写迭代数 ===
         let progressLine;
-        if (typeof __stab_iterations_final === 'number' &&
-            typeof __stab_total_final      === 'number' &&
-            __stab_total_final > 0) {
+        if (fromCache) {
+            // 缓存布局时稳定进度也“没有意义”
+            progressLine = '稳定进度: (不适用)';
+        } else if (typeof __stab_iterations_final === 'number' &&
+                   typeof __stab_total_final      === 'number' &&
+                   __stab_total_final > 0) {
             const pct = Math.round(__stab_iterations_final / __stab_total_final * 10000) / 100;
             progressLine = `稳定进度: 迭代: ${__stab_iterations_final}/${__stab_total_final}  进度: ${pct}%`;
         } else if (typeof __stab_iterations_final === 'number') {
@@ -1246,6 +1317,7 @@ window.__DEBUG = {"debug_cfg": %s};
             <div>迭代次数(stab_iter): ${iterLine}</div>
             <div>${scoreLine}</div>
             <div>缩放(缓存): ${cached} &nbsp; 缩放(实时): ${raw}</div>
+            <div>布局来源: ${layoutSource}</div>
             <div id="dbg_stab_time">${timeLine}</div>
             <div id="dbg_stab_progress">${progressLine}</div>
         `;
@@ -1943,6 +2015,13 @@ window.__DEBUG = {"debug_cfg": %s};
                 }
                 __stab_duration_final = dt_ms;
                 __stab_start_time     = null;   // 标记“已经结束”
+
+                // 若尚未声明布局来源，则视为“由物理迭代得到”
+                try {
+                    if (!window.__LAYOUT_SOURCE) {
+                        window.__LAYOUT_SOURCE = 'physics';
+                    }
+                } catch(e){}
 
                 // 直接写最终 HUD 文本
                 const tEl = document.getElementById('dbg_stab_time');
